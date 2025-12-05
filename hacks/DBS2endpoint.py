@@ -21,6 +21,10 @@ class DBS2api:
     class _Read(Resource):
         def get(self):
             return jsonify(getJokes())
+        def put(self):
+            return "i love apis"
+    
+
 
     # getJoke(id)
     class _ReadID(Resource):
