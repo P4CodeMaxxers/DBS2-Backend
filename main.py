@@ -29,6 +29,8 @@ from api.classroom_api import classroom_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from hacks.DBS2endpoint import DBS2_api  # Import the Discord Basement Simulator 2 API blueprint
 from api.post import post_api  # Import the social media post API
+from api.dbs2_api import dbs2_api
+from model.dbs2_player import DBS2Player, initDBS2Players
 #from api.announcement import announcement_api ##temporary revert
 
 # database Initialization functions
@@ -79,13 +81,15 @@ app.register_blueprint(study_api)
 app.register_blueprint(classroom_api)
 app.register_blueprint(feedback_api)
 app.register_blueprint(joke_api)  # Register the joke API blueprint
-app.register_blueprint(DBS2_api)  # Register the DBS2 API blueprint
+app.register_blueprint(dbs2_api) #dbs2 api
 app.register_blueprint(post_api)  # Register the social media post API
 # app.register_blueprint(announcement_api) ##temporary revert
 
 # Jokes file initialization
 with app.app_context():
     initJokes()
+    initDBS2Players()
+
 
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
@@ -150,6 +154,11 @@ def index():
 def u2table():
     users = User.query.all()
     return render_template("u2table.html", user_data=users)
+
+@app.route('/dbs2admin')
+@login_required
+def dbs2_admin():
+    return render_template("dbs2admin.html")
 
 @app.route('/sections/')
 @login_required
