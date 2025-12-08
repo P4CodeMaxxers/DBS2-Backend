@@ -80,7 +80,7 @@ python main.py
 
 You should see:
 ```
-** Server running: http://localhost:8887
+** Server running: http://localhost:8587
 DBS2 Players initialized with test users: West, Cyrus, Maya
 ```
 
