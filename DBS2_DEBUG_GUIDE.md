@@ -118,7 +118,7 @@ Postman lets you send requests to your API without using a browser. This is how 
 2. **Create a new request:**
    - Click the `+` button for a new tab
    - Change `GET` to `POST` (dropdown on the left)
-   - Enter URL: `http://localhost:8887/login`
+   - Enter URL: `http://localhost:8001/login`
 
 3. **Set up the login data:**
    - Click the `Body` tab (below the URL)
