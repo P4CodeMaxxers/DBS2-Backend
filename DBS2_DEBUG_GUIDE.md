@@ -140,7 +140,7 @@ Postman lets you send requests to your API without using a browser. This is how 
 **Screenshot of what it should look like:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ POST ▼ │ http://localhost:8887/login          │ Send │     │
+│ POST ▼ │ http://localhost:8587/login          │ Send │     │
 ├─────────────────────────────────────────────────────────────┤
 │ Params │ Auth │ Headers │ Body ● │ Pre-req │ Tests │       │
 ├─────────────────────────────────────────────────────────────┤
@@ -159,7 +159,7 @@ Now that you're "logged in" (Postman has your cookie), test each endpoint:
 ### GET Your Player Data
 ```
 Method: GET
-URL: http://localhost:8887/api/dbs2/player
+URL: http://localhost:8587/api/dbs2/player
 Body: (none needed)
 ```
 
@@ -183,7 +183,7 @@ Body: (none needed)
 ### GET Your Crypto Balance
 ```
 Method: GET
-URL: http://localhost:8887/api/dbs2/crypto
+URL: http://localhost:8587/api/dbs2/crypto
 ```
 
 **Expected Response:**
@@ -196,7 +196,7 @@ URL: http://localhost:8887/api/dbs2/crypto
 ### PUT (Update) - Add Crypto
 ```
 Method: PUT
-URL: http://localhost:8887/api/dbs2/crypto
+URL: http://localhost:8587/api/dbs2/crypto
 Headers: Content-Type: application/json
 Body (raw JSON):
 {
@@ -214,7 +214,7 @@ Body (raw JSON):
 ### PUT - Set Crypto to Specific Value
 ```
 Method: PUT
-URL: http://localhost:8887/api/dbs2/crypto
+URL: http://localhost:8587/api/dbs2/crypto
 Headers: Content-Type: application/json
 Body (raw JSON):
 {
@@ -225,13 +225,13 @@ Body (raw JSON):
 ### GET Your Inventory
 ```
 Method: GET
-URL: http://localhost:8887/api/dbs2/inventory
+URL: http://localhost:8587/api/dbs2/inventory
 ```
 
 ### POST - Add Item to Inventory
 ```
 Method: POST
-URL: http://localhost:8887/api/dbs2/inventory
+URL: http://localhost:8587/api/dbs2/inventory
 Headers: Content-Type: application/json
 Body (raw JSON):
 {
@@ -243,7 +243,7 @@ Body (raw JSON):
 ### DELETE - Remove Item from Inventory
 ```
 Method: DELETE
-URL: http://localhost:8887/api/dbs2/inventory
+URL: http://localhost:8587/api/dbs2/inventory
 Headers: Content-Type: application/json
 Body (raw JSON):
 {
@@ -255,13 +255,13 @@ Body (raw JSON):
 ### GET Your Scores
 ```
 Method: GET
-URL: http://localhost:8887/api/dbs2/scores
+URL: http://localhost:8587/api/dbs2/scores
 ```
 
 ### PUT - Submit a Score
 ```
 Method: PUT
-URL: http://localhost:8887/api/dbs2/scores
+URL: http://localhost:8587/api/dbs2/scores
 Headers: Content-Type: application/json
 Body (raw JSON):
 {
@@ -284,13 +284,13 @@ Body (raw JSON):
 ### GET Minigame Completion Status
 ```
 Method: GET
-URL: http://localhost:8887/api/dbs2/minigames
+URL: http://localhost:8587/api/dbs2/minigames
 ```
 
 ### PUT - Mark Minigame Complete
 ```
 Method: PUT
-URL: http://localhost:8887/api/dbs2/minigames
+URL: http://localhost:8587/api/dbs2/minigames
 Headers: Content-Type: application/json
 Body (raw JSON):
 {
@@ -301,7 +301,7 @@ Body (raw JSON):
 ### GET Leaderboard (No Login Required!)
 ```
 Method: GET
-URL: http://localhost:8887/api/dbs2/leaderboard?limit=10
+URL: http://localhost:8587/api/dbs2/leaderboard?limit=10
 ```
 
 ## 4.3 Testing Error Cases
@@ -310,13 +310,13 @@ Good testing means also checking what happens when things go wrong!
 
 ### Test: Not Logged In
 1. Click `Cookies` → Delete the session cookie
-2. Try `GET http://localhost:8887/api/dbs2/player`
+2. Try `GET http://localhost:8587/api/dbs2/player`
 3. **Expected:** Redirect to login page (302) or error
 
 ### Test: Invalid Data
 ```
 Method: POST
-URL: http://localhost:8887/api/dbs2/inventory
+URL: http://localhost:8587/api/dbs2/inventory
 Body (raw JSON):
 {
     "wrong_field": "test"
@@ -327,7 +327,7 @@ Body (raw JSON):
 ### Test: Invalid Index
 ```
 Method: DELETE
-URL: http://localhost:8887/api/dbs2/inventory
+URL: http://localhost:8587/api/dbs2/inventory
 Body: {"index": 999}
 ```
 **Expected:** Error "Invalid index"
@@ -341,7 +341,7 @@ Body: {"index": 999}
 This is the fastest way to test the JavaScript API!
 
 ### Steps:
-1. Go to `http://localhost:8887/login`
+1. Go to `http://localhost:8587/login`
 2. Login as `west` / `dbs2test`
 3. Go to any page that has DBS2API.js loaded (or go to `/dbs2admin`)
 4. Press `F12` to open Developer Tools
@@ -416,7 +416,7 @@ If your game page has elements with these IDs, they auto-update:
 ## Access the Dashboard
 
 1. Login as any user
-2. Go to `http://localhost:8887/dbs2admin`
+2. Go to `http://localhost:8587/dbs2admin`
 
 ## What You Can Do
 
@@ -468,7 +468,7 @@ If your game page has elements with these IDs, they auto-update:
 **Fixes:**
 - Check URL spelling exactly
 - Make sure server is running (`python main.py`)
-- Check the port number (8887 or your config)
+- Check the port number (8587 or your config)
 
 ## Error: 500 Internal Server Error
 
