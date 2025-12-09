@@ -1,808 +1,711 @@
-# DBS2 Backend Testing & Debugging Guide
+# DBS2 Complete Testing Guide
 
-## For AP CSP Students - Complete Reference
-
----
-
-# Table of Contents
-1. [What Is This System?](#1-what-is-this-system)
-2. [Key Vocabulary](#2-key-vocabulary)
-3. [Setting Up For Testing](#3-setting-up-for-testing)
-4. [Testing with Postman](#4-testing-with-postman)
-5. [Testing with Frontend](#5-testing-with-frontend)
-6. [Using the Admin Dashboard](#6-using-the-admin-dashboard)
-7. [Common Errors & Fixes](#7-common-errors--fixes)
-8. [AP CSP Exam Connections](#8-ap-csp-exam-connections)
-9. [Quick Reference Cheat Sheet](#9-quick-reference-cheat-sheet)
+## Overview
+This guide covers **two testing approaches**:
+1. **Frontend Testing** - Login through the website, test in browser console
+2. **Postman Testing** - Test backend endpoints directly (verify API works independently)
 
 ---
 
-# 1. What Is This System?
+# PART 1: FRONTEND TESTING
 
-## The Big Picture
-
-Think of this like a video game save system:
+## System Architecture
 
 ```
-┌─────────────────┐         ┌─────────────────┐         ┌─────────────────┐
-│   YOU (Player)  │ ──────▶ │     SERVER      │ ──────▶ │    DATABASE     │
-│   Playing Game  │         │  (Flask/Python) │         │    (SQLite)     │
-│                 │ ◀────── │                 │ ◀────── │                 │
-│  See your crypto│         │ Processes data  │         │ Stores data     │
-└─────────────────┘         └─────────────────┘         └─────────────────┘
-     Frontend                    Backend                    Storage
-    (JavaScript)                (Python)                   (Database)
+┌─────────────────────────────────────────────────────────────────┐
+│  FRONTEND (Jekyll site - GitHub Pages or localhost:4100)        │
+│  ├── /login page → User enters credentials                      │
+│  ├── /dbs2 page → Game loads, calls DBS2API.js                 │
+│  └── DBS2API.js → All API calls to backend                     │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓ HTTP requests with JWT cookie
+┌─────────────────────────────────────────────────────────────────┐
+│  BACKEND (Flask - localhost:8587 or production URL)             │
+│  ├── /api/authenticate → Returns JWT token as cookie           │
+│  ├── /api/dbs2/* → All game data endpoints                     │
+│  └── Database → Stores player crypto, inventory, scores        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**What gets saved for each player:**
-- 💰 Crypto (in-game currency)
-- 🎒 Inventory (items you collect)
-- 🏆 High Scores (best scores per minigame)
-- ✅ Completion Status (which minigames you've beaten)
-
-## How Login Works (Important!)
-
-1. You type username/password on the login page
-2. Server checks if they're correct
-3. If yes, server creates a **session** and sends a **cookie** to your browser
-4. Your browser automatically sends this cookie with EVERY future request
-5. Server reads the cookie and knows who you are
-
-**Think of it like a wristband at an amusement park** - once you get it at the entrance, you don't need to show your ticket again for every ride.
-
 ---
 
-# 2. Key Vocabulary
+## Quick Start Testing
 
-| Term | Simple Explanation | Example |
-|------|-------------------|---------|
-| **API** | A way for programs to talk to each other | Your game asks the server "what's my crypto?" |
-| **Endpoint** | A specific URL that does something | `/api/dbs2/crypto` gets your crypto balance |
-| **GET** | Asking for information | "What's my inventory?" |
-| **POST** | Creating something new | "Add this item to my inventory" |
-| **PUT** | Updating something existing | "Change my crypto to 500" |
-| **DELETE** | Removing something | "Remove item #2 from inventory" |
-| **JSON** | A format for sending data | `{"crypto": 500, "name": "West"}` |
-| **Cookie** | Small data stored in browser | Remembers you're logged in |
-| **Session** | Server's memory of who you are | Links your cookie to your account |
-| **Database** | Where all data is permanently stored | Like a spreadsheet that saves forever |
-| **Model** | Code that defines data structure | "A player has crypto, inventory, scores..." |
-| **Blueprint** | Group of related API endpoints | All `/api/dbs2/*` routes together |
-
----
-
-# 3. Setting Up For Testing
-
-## Step 1: Make Sure Server Is Running
-
-Open terminal in your project folder and run:
+### Step 1: Start Backend Server
 ```bash
+cd your-backend-repo
+./scripts/activate_flask.sh
+# OR
 python main.py
 ```
+Backend should be running on `http://localhost:8587`
 
-You should see:
+### Step 2: Start Frontend Server
+```bash
+cd DBS2-Frontend
+bundle exec jekyll serve --port 4100
 ```
-** Server running: http://localhost:8887
-DBS2 Players initialized with test users: West, Cyrus, Maya
+Frontend should be running on `http://localhost:4100`
+
+### Step 3: Login
+1. Go to `http://localhost:4100/login`
+2. Enter test credentials:
+   - Username: `west` (or `cyrus`, `maya`)
+   - Password: `dbs2test`
+3. Click Login
+4. You should be redirected to the game or home page
+
+### Step 4: Test the Game
+1. Navigate to the DBS2 game page
+2. Open browser DevTools (F12) → Console tab
+3. Test API connection:
+```javascript
+// Should return your player data
+await DBS2API.getPlayer()
+
+// Should return your crypto balance
+await DBS2API.getCrypto()
+
+// Test adding crypto
+await DBS2API.addCrypto(10)
 ```
-
-**If you see errors:**
-- `ModuleNotFoundError` → Run `pip install flask flask-login flask-restful`
-- `Address already in use` → Another server is running, close it first
-- Database errors → Delete your `.db` file and restart
-
-## Step 2: Know Your Test Accounts
-
-| Username | Password | Crypto | Minigames Done |
-|----------|----------|--------|----------------|
-| `west` | `dbs2test` | 1250 | 5/5 (all complete) |
-| `cyrus` | `dbs2test` | 980 | 3/5 |
-| `maya` | `dbs2test` | 750 | 2/5 |
-
-## Step 3: Install Postman
-
-1. Go to https://www.postman.com/downloads/
-2. Download and install (free version is fine)
-3. Create an account or skip sign-in
 
 ---
 
-# 4. Testing with Postman
+## Testing Each Feature
 
-Postman lets you send requests to your API without using a browser. This is how backend developers test their code!
-
-## 4.1 First: Login to Get a Cookie
-
-### Step-by-Step:
-
-1. **Open Postman**
-
-2. **Create a new request:**
-   - Click the `+` button for a new tab
-   - Change `GET` to `POST` (dropdown on the left)
-   - Enter URL: `http://localhost:8887/login`
-
-3. **Set up the login data:**
-   - Click the `Body` tab (below the URL)
-   - Select `x-www-form-urlencoded`
-   - Add these key-value pairs:
-     ```
-     Key: username    Value: west
-     Key: password    Value: dbs2test
-     ```
-
-4. **Send the request:**
-   - Click the blue `Send` button
-   - You should see HTML response (the homepage)
-
-5. **Verify cookie was saved:**
-   - Click the `Cookies` link (below Send button)
-   - You should see a `session` cookie for `localhost`
-
-**Screenshot of what it should look like:**
-```
-┌─────────────────────────────────────────────────────────────┐
-│ POST ▼ │ http://localhost:8887/login          │ Send │     │
-├─────────────────────────────────────────────────────────────┤
-│ Params │ Auth │ Headers │ Body ● │ Pre-req │ Tests │       │
-├─────────────────────────────────────────────────────────────┤
-│ ○ none  ○ form-data  ● x-www-form-urlencoded  ○ raw       │
-├─────────────────────────────────────────────────────────────┤
-│ KEY             │ VALUE                                     │
-│ username        │ west                                      │
-│ password        │ dbs2test                                  │
-└─────────────────────────────────────────────────────────────┘
+### A. Player Data
+```javascript
+// Get all player info
+const player = await DBS2API.getPlayer();
+console.log(player);
+// Expected: { uid, crypto, inventory, scores, minigames_completed, ... }
 ```
 
-## 4.2 Test Each API Endpoint
+### B. Crypto System
+```javascript
+// Get current crypto
+const crypto = await DBS2API.getCrypto();
+console.log('Current crypto:', crypto);
 
-Now that you're "logged in" (Postman has your cookie), test each endpoint:
-
-### GET Your Player Data
+// Add crypto (like when completing a minigame)
+const newTotal = await DBS2API.addCrypto(50);
+console.log('New total:', newTotal);
 ```
-Method: GET
-URL: http://localhost:8887/api/dbs2/player
-Body: (none needed)
+
+### C. Bitcoin Boost (Crypto Miner feature)
+```javascript
+// Get current Bitcoin boost multiplier
+const boost = await DBS2API.getBitcoinBoost();
+console.log(boost);
+// Expected: { boost_multiplier: 1.25, btc_price_usd: 45000, btc_change_24h: 5.2 }
+
+// Add crypto WITH boost applied
+const result = await DBS2API.addCryptoWithBoost(10);
+console.log(result);
+// If BTC is up 10%, base 10 becomes 15 crypto
 ```
 
-**Expected Response:**
+### D. Minigame Completion
+```javascript
+// Check which minigames are completed
+const status = await DBS2API.getMinigameStatus();
+console.log(status);
+// Expected: { crypto_miner: false, infinite_user: true, laundry: false, ash_trail: false }
+
+// Mark a minigame as complete
+await DBS2API.completeMinigame('crypto_miner');
+```
+
+### E. Leaderboard
+```javascript
+// Get top 10 players (public, no login required)
+const leaderboard = await DBS2API.getLeaderboard(10);
+console.log(leaderboard);
+```
+
+---
+
+## Testing Minigames
+
+### Crypto Miner (Computer2)
+1. Walk to Computer2, press E
+2. Bitcoin boost displays at top
+3. Press the shown key (no holding!)
+4. Reach 50 progress to complete
+5. Reward = (progress / 5) × Bitcoin boost multiplier
+6. First completion: +25 bonus crypto
+
+### Infinite User (Computer1)
+1. Walk to Computer1, press E
+2. Decrypt password (a=1, b=2, c=3... z=26)
+3. Example: "9/19/8/15/23/7/18/5/5/14/" = "ishowgreen"
+4. Create a new password
+5. Reward: 15-24 crypto + 20 first-time bonus
+
+### Laundry Machine
+1. Walk to washing machine, press E
+2. Drag parts to matching outlines
+3. Load all 5 laundry items
+4. Click Start
+5. Reward: 20 crypto + 15 first-time bonus
+
+### Ash Trail (Bookshelf)
+1. Walk to Bookshelf, press E
+2. Pick a book (harder = more reward)
+3. Memorize the glowing path
+4. Trace it from memory with WASD
+5. Score based on accuracy (80%+ to pass)
+
+---
+
+## Common Issues & Fixes
+
+### "Not logged in" or 401 Errors
+**Cause:** JWT cookie missing or expired
+
+**Fix:**
+1. Go to `/login` page
+2. Login again
+3. Return to game
+
+### CORS Errors
+**Cause:** Frontend/backend on different origins
+
+**Check backend has:**
+```python
+CORS(app, supports_credentials=True, origins=["http://localhost:4100"])
+```
+
+### DBS2API is undefined
+**Cause:** Script not loaded
+
+**Check:**
+1. Browser Network tab for 404 on DBS2API.js
+2. Import path is correct in your game files
+
+### Leaderboard shows fallback data
+**Cause:** No players in database yet
+
+**Fix:** Complete a minigame to create your player record
+
+---
+
+## Test Accounts
+
+| Username | Password |
+|----------|----------|
+| west | dbs2test |
+| cyrus | dbs2test |
+| maya | dbs2test |
+
+---
+
+## Backend Endpoints
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/authenticate` | No | Login |
+| GET | `/api/dbs2/player` | Yes | Get player |
+| PUT | `/api/dbs2/crypto` | Yes | Add/set crypto |
+| GET | `/api/dbs2/minigames` | Yes | Completion status |
+| PUT | `/api/dbs2/minigames` | Yes | Mark complete |
+| GET | `/api/dbs2/leaderboard` | No | Top players |
+| GET | `/api/dbs2/bitcoin-boost` | No | BTC multiplier |
+
+---
+
+## Verification Checklist
+
+- [ ] Backend running on port 8587
+- [ ] Frontend running on port 4100  
+- [ ] Can login at /login page
+- [ ] `await DBS2API.getPlayer()` returns data
+- [ ] Minigames award crypto on completion
+- [ ] Leaderboard refreshes with real data
+- [ ] Bitcoin boost shows in Crypto Miner
+
+---
+
+# PART 2: POSTMAN TESTING (Backend Verification)
+
+Use Postman to test backend endpoints **independently** of the frontend. This verifies the API works correctly.
+
+## Postman Setup
+
+### Base URL
+```
+http://localhost:8587
+```
+
+### Required Headers (for all requests)
+| Key | Value |
+|-----|-------|
+| Content-Type | application/json |
+
+---
+
+## Step 1: Authenticate (Get JWT Token)
+
+**Request:**
+```
+POST http://localhost:8587/api/authenticate
+```
+
+**Body (raw JSON):**
 ```json
 {
-    "id": 1,
-    "user_id": 1,
-    "user_info": {
-        "uid": "west",
-        "name": "West"
-    },
-    "crypto": 1250,
-    "inventory": [...],
-    "scores": {...},
-    "completed_ash_trail": true,
-    ...
+    "uid": "west",
+    "password": "dbs2test"
 }
 ```
 
-### GET Your Crypto Balance
-```
-Method: GET
-URL: http://localhost:8887/api/dbs2/crypto
-```
-
-**Expected Response:**
+**Expected Response (200 OK):**
 ```json
 {
-    "crypto": 1250
+    "message": "Authentication successful"
 }
 ```
 
-### PUT (Update) - Add Crypto
+**IMPORTANT:** Look at the response **Cookies** tab in Postman. You should see a cookie like:
 ```
-Method: PUT
-URL: http://localhost:8887/api/dbs2/crypto
-Headers: Content-Type: application/json
-Body (raw JSON):
-{
-    "add": 100
-}
+jwt_token_flask=eyJhbGciOiJIUzI1NiIs...
 ```
 
-**Expected Response:**
+Postman automatically saves this cookie and sends it with future requests to the same domain.
+
+### Common Errors:
+| Status | Meaning | Fix |
+|--------|---------|-----|
+| 401 | Wrong password | Check password is `dbs2test` |
+| 404 | User not found | Check username exists |
+| 500 | Server error | Check backend terminal for Python errors |
+
+---
+
+## Step 2: Test Player Endpoint
+
+**Request:**
+```
+GET http://localhost:8587/api/dbs2/player
+```
+
+**Expected Response (200 OK):**
 ```json
 {
-    "crypto": 1350
-}
-```
-
-### PUT - Set Crypto to Specific Value
-```
-Method: PUT
-URL: http://localhost:8887/api/dbs2/crypto
-Headers: Content-Type: application/json
-Body (raw JSON):
-{
-    "crypto": 500
-}
-```
-
-### GET Your Inventory
-```
-Method: GET
-URL: http://localhost:8887/api/dbs2/inventory
-```
-
-### POST - Add Item to Inventory
-```
-Method: POST
-URL: http://localhost:8887/api/dbs2/inventory
-Headers: Content-Type: application/json
-Body (raw JSON):
-{
-    "name": "Secret Key",
-    "found_at": "basement"
-}
-```
-
-### DELETE - Remove Item from Inventory
-```
-Method: DELETE
-URL: http://localhost:8887/api/dbs2/inventory
-Headers: Content-Type: application/json
-Body (raw JSON):
-{
-    "index": 0
-}
-```
-(This removes the first item, index starts at 0)
-
-### GET Your Scores
-```
-Method: GET
-URL: http://localhost:8887/api/dbs2/scores
-```
-
-### PUT - Submit a Score
-```
-Method: PUT
-URL: http://localhost:8887/api/dbs2/scores
-Headers: Content-Type: application/json
-Body (raw JSON):
-{
-    "game": "ash_trail",
-    "score": 150
-}
-```
-
-**Response tells you if it's a new high score:**
-```json
-{
-    "is_high_score": true,
-    "scores": {
-        "ash_trail": 150,
-        ...
+    "uid": "west",
+    "crypto": 100,
+    "inventory": [],
+    "scores": {},
+    "minigames_completed": {
+        "crypto_miner": false,
+        "infinite_user": false,
+        "laundry": false,
+        "ash_trail": false
     }
 }
 ```
 
-### GET Minigame Completion Status
+### Common Errors:
+| Status | Meaning | Fix |
+|--------|---------|-----|
+| 302 | Redirect to login | Cookie not sent - re-authenticate |
+| 401 | Unauthorized | JWT expired - re-authenticate |
+
+---
+
+## Step 3: Test Crypto Operations
+
+### Get Crypto Balance
 ```
-Method: GET
-URL: http://localhost:8887/api/dbs2/minigames
+GET http://localhost:8587/api/dbs2/crypto
 ```
 
-### PUT - Mark Minigame Complete
-```
-Method: PUT
-URL: http://localhost:8887/api/dbs2/minigames
-Headers: Content-Type: application/json
-Body (raw JSON):
+**Response:**
+```json
 {
-    "laundry": true
+    "crypto": 100
 }
 ```
 
-### GET Leaderboard (No Login Required!)
+### Add Crypto
 ```
-Method: GET
-URL: http://localhost:8887/api/dbs2/leaderboard?limit=10
+PUT http://localhost:8587/api/dbs2/crypto
 ```
 
-## 4.3 Testing Error Cases
-
-Good testing means also checking what happens when things go wrong!
-
-### Test: Not Logged In
-1. Click `Cookies` → Delete the session cookie
-2. Try `GET http://localhost:8887/api/dbs2/player`
-3. **Expected:** Redirect to login page (302) or error
-
-### Test: Invalid Data
-```
-Method: POST
-URL: http://localhost:8887/api/dbs2/inventory
-Body (raw JSON):
+**Body:**
+```json
 {
-    "wrong_field": "test"
+    "add": 50
 }
 ```
-**Expected:** Error message saying "Item name required"
 
-### Test: Invalid Index
+**Response:**
+```json
+{
+    "crypto": 150,
+    "message": "Added 50 crypto"
+}
 ```
-Method: DELETE
-URL: http://localhost:8887/api/dbs2/inventory
-Body: {"index": 999}
+
+### Set Crypto to Specific Amount
 ```
-**Expected:** Error "Invalid index"
+PUT http://localhost:8587/api/dbs2/crypto
+```
+
+**Body:**
+```json
+{
+    "crypto": 200
+}
+```
+
+**Response:**
+```json
+{
+    "crypto": 200,
+    "message": "Crypto set to 200"
+}
+```
 
 ---
 
-# 5. Testing with Frontend
+## Step 4: Test Minigame Completion
 
-## 5.1 Browser Console Testing
-
-This is the fastest way to test the JavaScript API!
-
-### Steps:
-1. Go to `http://localhost:8887/login`
-2. Login as `west` / `dbs2test`
-3. Go to any page that has DBS2API.js loaded (or go to `/dbs2admin`)
-4. Press `F12` to open Developer Tools
-5. Click the `Console` tab
-6. Type these commands:
-
-```javascript
-// Check if API is loaded
-DBS2API
-// Should show the API object
-
-// Get your player data
-await DBS2API.getPlayer()
-
-// Get just crypto
-await DBS2API.getCrypto()
-
-// Add 50 crypto
-await DBS2API.addCrypto(50)
-
-// Check window variable updated
-window.playerCrypto
-
-// Add an item
-await DBS2API.addInventoryItem("Test Item", "console")
-
-// View inventory
-await DBS2API.getInventory()
-
-// Submit a score
-await DBS2API.submitScore("ash_trail", 200)
-
-// Mark game complete
-await DBS2API.completeMinigame("ash_trail")
-
-// Get leaderboard
-await DBS2API.getLeaderboard(5)
+### Get Minigame Status
+```
+GET http://localhost:8587/api/dbs2/minigames
 ```
 
-## 5.2 Check Network Tab
+**Response:**
+```json
+{
+    "crypto_miner": false,
+    "infinite_user": false,
+    "laundry": false,
+    "ash_trail": false,
+    "completed_count": 0,
+    "total_minigames": 4
+}
+```
 
-The Network tab shows you exactly what's being sent/received!
+### Mark Minigame Complete
+```
+PUT http://localhost:8587/api/dbs2/minigames
+```
 
-1. Open DevTools (`F12`)
-2. Click `Network` tab
-3. Run a command like `await DBS2API.addCrypto(10)`
-4. Look for the `crypto` request in the list
-5. Click it to see:
-   - **Headers:** What was sent (including cookie!)
-   - **Payload:** The JSON body you sent
-   - **Response:** What the server sent back
+**Body:**
+```json
+{
+    "crypto_miner": true
+}
+```
 
-## 5.3 Testing UI Updates
-
-If your game page has elements with these IDs, they auto-update:
-- `id="crypto"`
-- `id="balance"`
-- `id="money"`
-- `id="playerCrypto"`
-
-**Test it:**
-1. Add this to any page: `<h1>Crypto: <span id="crypto">0</span></h1>`
-2. Load the page while logged in
-3. The number should show your actual crypto
-4. Run `await DBS2API.addCrypto(100)` in console
-5. Watch the number update automatically!
+**Response:**
+```json
+{
+    "message": "Minigame status updated",
+    "minigames_completed": {
+        "crypto_miner": true,
+        "infinite_user": false,
+        "laundry": false,
+        "ash_trail": false
+    }
+}
+```
 
 ---
 
-# 6. Using the Admin Dashboard
+## Step 5: Test Inventory
 
-## Access the Dashboard
+### Get Inventory
+```
+GET http://localhost:8587/api/dbs2/inventory
+```
 
-1. Login as any user
-2. Go to `http://localhost:8887/dbs2admin`
+**Response:**
+```json
+{
+    "inventory": []
+}
+```
 
-## What You Can Do
+### Add Item
+```
+POST http://localhost:8587/api/dbs2/inventory
+```
 
-### View Leaderboard
-- Shows top 10 players ranked by crypto
-- Gold badges for top 3
-- Shows completion count (X/5 minigames)
+**Body:**
+```json
+{
+    "name": "Golden Key",
+    "found_at": "basement_chest"
+}
+```
 
-### View All Players
-- See every player's data at a glance
-- Progress icons show which minigames are done:
-  - 📚 = Ash Trail
-  - ⛏️ = Crypto Miner
-  - 🐀 = Whack-a-Rat
-  - 🧺 = Laundry
-  - 💻 = Infinite User
+**Response:**
+```json
+{
+    "message": "Item added",
+    "inventory": [
+        {"name": "Golden Key", "found_at": "basement_chest"}
+    ]
+}
+```
 
-### View Player Details
-1. Click `View` button on any player
-2. See full breakdown:
-   - All inventory items
-   - All high scores
-   - Exact completion status
-   - Timestamps
+### Remove Item
+```
+DELETE http://localhost:8587/api/dbs2/inventory
+```
 
-### Edit Crypto (Admin Feature)
-1. Click `Edit Crypto` on any player
-2. Enter new value
-3. Click Save
-4. Leaderboard updates automatically!
+**Body:**
+```json
+{
+    "index": 0
+}
+```
 
 ---
 
-# 7. Common Errors & Fixes
+## Step 6: Test Scores
 
-## HTTP Status Codes Explained
+### Get Scores
+```
+GET http://localhost:8587/api/dbs2/scores
+```
 
-| Code | Name | What It Means | What To Do |
-|------|------|---------------|------------|
-| **200** | OK | ✅ Success! Everything worked | Nothing - you're good! |
-| **201** | Created | ✅ Successfully created something new | Nothing - item was added |
-| **302** | Redirect | ↪️ Server is sending you somewhere else | Usually means "go login first" |
-| **400** | Bad Request | ❌ You sent data the server doesn't understand | Check your JSON format and field names |
-| **401** | Unauthorized | 🔒 You're not logged in | Login first, check your cookie |
-| **403** | Forbidden | 🚫 You're logged in but not allowed to do this | You might need admin permissions |
-| **404** | Not Found | 🔍 That URL doesn't exist | Check spelling, check if server is running |
-| **405** | Method Not Allowed | 🚷 Wrong HTTP method for this endpoint | Use GET instead of POST, or vice versa |
-| **500** | Internal Server Error | 💥 Server crashed! | Check terminal for Python error message |
+**Response:**
+```json
+{
+    "scores": {}
+}
+```
 
-**Pro Tip:** If you see a 500 error, the actual error message is in your **terminal** (where you ran `python main.py`), not in Postman or the browser.
+### Submit Score
+```
+PUT http://localhost:8587/api/dbs2/scores
+```
+
+**Body:**
+```json
+{
+    "game": "crypto_miner",
+    "score": 150
+}
+```
+
+**Response:**
+```json
+{
+    "message": "Score updated",
+    "game": "crypto_miner",
+    "score": 150,
+    "is_high_score": true
+}
+```
 
 ---
 
-## Understanding Cookies (Simple Version)
+## Step 7: Test Public Endpoints (No Auth Required)
 
-**What is a cookie?**
-A cookie is a small piece of text your browser stores. When you login, the server says "here's a cookie that proves you're logged in" and your browser saves it.
-
-**How it works with our system:**
-
+### Leaderboard
 ```
-1. You POST to /login with username & password
-         ↓
-2. Server checks credentials, creates a "session" 
-         ↓
-3. Server sends back: "Set-Cookie: session=abc123xyz..."
-         ↓
-4. Browser saves this cookie
-         ↓
-5. Every future request, browser automatically sends: "Cookie: session=abc123xyz..."
-         ↓
-6. Server reads cookie, looks up session, knows it's you!
+GET http://localhost:8587/api/dbs2/leaderboard?limit=5
 ```
 
-**Where to see your cookies:**
-- **Browser:** DevTools → Application tab → Cookies → localhost
-- **Postman:** Click "Cookies" link below the Send button
-
-**Cookie problems:**
-| Problem | Symptom | Fix |
-|---------|---------|-----|
-| No cookie | Every request redirects to login | Login again |
-| Expired cookie | Was working, now redirects | Login again |
-| Wrong domain | Cookie exists but API fails | Check you're on localhost:8587 |
-| Cookies blocked | Never works | Check browser privacy settings |
-
-**The `credentials: 'include'` line in JavaScript:**
-```javascript
-fetch(url, { credentials: 'include' })  // This tells browser to send cookies!
+**Response:**
+```json
+{
+    "leaderboard": [
+        {
+            "user_info": {"name": "west", "uid": "west"},
+            "crypto": 200,
+            "completed_all": false
+        }
+    ]
+}
 ```
-Without this, the browser won't send your login cookie, and the server won't know who you are.
+
+### Bitcoin Boost
+```
+GET http://localhost:8587/api/dbs2/bitcoin-boost
+```
+
+**Response:**
+```json
+{
+    "boost_multiplier": 1.25,
+    "btc_price_usd": 45000.50,
+    "btc_change_24h": 5.2,
+    "message": "Bitcoin is up! 1.25x crypto boost active!"
+}
+```
 
 ---
 
-## Error: "Not logged in" or Redirect to Login
+## Postman Collection Setup
 
-**Cause:** Session cookie is missing or expired
+### Create a Collection
+1. Click "New" → "Collection"
+2. Name it "DBS2 API"
 
-**Fixes:**
-- Postman: Re-do the login request
-- Browser: Go to `/login` and login again
-- Check: Make sure cookies aren't blocked in browser
+### Add Requests in Order:
+1. `POST /api/authenticate` - Run this FIRST
+2. `GET /api/dbs2/player`
+3. `GET /api/dbs2/crypto`
+4. `PUT /api/dbs2/crypto` (add)
+5. `GET /api/dbs2/minigames`
+6. `PUT /api/dbs2/minigames`
+7. `GET /api/dbs2/leaderboard`
+8. `GET /api/dbs2/bitcoin-boost`
 
-## Error: 404 Not Found
-
-**Cause:** Wrong URL or server not running
-
-**Fixes:**
-- Check URL spelling exactly
-- Make sure server is running (`python main.py`)
-- Check the port number (8887 or your config)
-
-## Error: 500 Internal Server Error
-
-**Cause:** Something broke on the server
-
-**Fixes:**
-- Check your terminal - Python shows the error there!
-- Common causes:
-  - Database doesn't exist → delete .db file and restart
-  - Missing import → check main.py imports
-  - Syntax error in Python code
-
-## Error: "No data provided" or "Item name required"
-
-**Cause:** You sent the request without proper JSON body
-
-**Fixes:**
-- Make sure you selected `raw` and `JSON` in Postman
-- Check your JSON syntax (needs double quotes!)
-- Add the `Content-Type: application/json` header
-
-## Error: CORS Error (in browser)
-
-**Cause:** Browser blocking cross-origin request
-
-**Fix:** This shouldn't happen if frontend and backend are same origin. If it does, you might be accessing wrong URL.
-
-## Data Not Saving
-
-**Causes & Fixes:**
-1. Not logged in → Login first
-2. Database locked → Restart server
-3. Wrong method → Use PUT not GET for updates
-
-## How to Debug Like a Pro
-
-1. **Check Terminal:** Python errors show here
-2. **Check Network Tab:** See exactly what was sent/received
-3. **Check Console:** JavaScript errors show here
-4. **Add print statements:** In Python, add `print(data)` to see what's happening
-5. **Check Database Directly:**
-   ```python
-   # In Python shell
-   from main import app, db
-   from model.dbs2_player import DBS2Player
-   with app.app_context():
-       players = DBS2Player.query.all()
-       for p in players:
-           print(p.read())
-   ```
+### Postman Tips:
+- **Cookies are automatic**: After authenticating, Postman stores the JWT cookie
+- **Check Cookies tab**: Click "Cookies" under the Send button to see stored cookies
+- **Clear cookies to test auth**: Delete cookies to simulate logged-out state
 
 ---
-
-# 8. AP CSP Exam Connections
-
-This project demonstrates many AP CSP concepts! Here's how to explain them:
-
-## Big Idea 2: Data
-
-### 2.1 Binary/Data Representation
-- JSON converts data to text format for transmission
-- Database stores data in structured binary format
-
-### 2.3 Extracting Information from Data
-- Leaderboard queries database and ranks by crypto
-- Admin dashboard aggregates player statistics
-- High score system compares and updates records
-
-**Example CPT Language:**
-> "The program extracts information from the database by querying player records and calculating aggregate statistics like completion rates and rankings."
-
-## Big Idea 3: Algorithms
-
-### 3.1 Variables and Assignments
-```python
-# In dbs2_player.py
-self._crypto = crypto  # Variable assignment
-player.update({'add_crypto': 50})  # Updating stored value
-```
-
-### 3.3 Mathematical Expressions
-```python
-# Adding crypto uses arithmetic
-self._crypto += data['add_crypto']
-# Ensuring non-negative
-self._crypto = max(0, value)
-```
-
-### 3.5 Boolean Expressions
-```python
-# Checking if all minigames complete
-self._completed_all = (
-    self._completed_ash_trail and
-    self._completed_crypto_miner and
-    self._completed_whackarat and
-    self._completed_laundry and
-    self._completed_infinite_user
-)
-```
-
-### 3.6 Conditionals
-```python
-# In dbs2_api.py
-if 'crypto' in data:
-    player.update({'crypto': data['crypto']})
-elif 'add' in data:
-    player.update({'add_crypto': data['add']})
-```
-
-### 3.8 Iteration
-```python
-# Looping through players for leaderboard
-for player in players:
-    entry = player.read()
-    entry['rank'] = rank
-    leaderboard.append(entry)
-    rank += 1
-```
-
-### 3.9 Developing Algorithms
-The score system algorithm:
-1. Get current scores
-2. Check if new score > existing score
-3. If yes, update and save
-4. Return whether it was a high score
-
-```python
-def update_score(self, game_name, score):
-    current = self.scores
-    if game_name not in current or score > current[game_name]:
-        current[game_name] = score
-        self.scores = current
-        db.session.commit()
-        return True  # New high score!
-    return False  # Not a high score
-```
-
-### 3.10 Lists
-```python
-# Inventory is a list
-inventory = [
-    {'name': 'Key', 'found_at': 'room1'},
-    {'name': 'Map', 'found_at': 'room2'}
-]
-
-# Adding to list
-current.append(item)
-
-# Removing from list by index
-removed = current.pop(index)
-```
-
-## Big Idea 4: Computing Systems & Networks
-
-### 4.1 The Internet
-- HTTP protocol for client-server communication
-- Requests travel from browser → server → database → back
-
-### 4.2 Fault Tolerance
-```python
-# Error handling prevents crashes
-try:
-    db.session.commit()
-    return self
-except:
-    db.session.rollback()  # Undo failed changes
-    return None
-```
-
-## Create Performance Task (CPT) Connections
-
-If using this for CPT, you can describe:
-
-**Input:** User actions (clicking buttons, completing minigames)
-
-**List Usage:** 
-- Inventory stores items as a list
-- Can add items (append)
-- Can remove items (pop by index)
-- Program iterates through list to display
-
-**Procedure with Parameter:**
-```python
-def update_score(self, game_name, score):  # Two parameters!
-    # Algorithm with sequencing, selection, iteration
-```
-
-**Output:** 
-- Updated UI showing new crypto balance
-- Leaderboard showing ranked players
-- Success/error messages
-
----
-
-# 9. Quick Reference Cheat Sheet
-
-## API Endpoints Summary
-
-| Action | Method | URL | Body |
-|--------|--------|-----|------|
-| Get player data | GET | `/api/dbs2/player` | - |
-| Get crypto | GET | `/api/dbs2/crypto` | - |
-| Add crypto | PUT | `/api/dbs2/crypto` | `{"add": 50}` |
-| Set crypto | PUT | `/api/dbs2/crypto` | `{"crypto": 500}` |
-| Get inventory | GET | `/api/dbs2/inventory` | - |
-| Add item | POST | `/api/dbs2/inventory` | `{"name": "X", "found_at": "Y"}` |
-| Remove item | DELETE | `/api/dbs2/inventory` | `{"index": 0}` |
-| Get scores | GET | `/api/dbs2/scores` | - |
-| Submit score | PUT | `/api/dbs2/scores` | `{"game": "X", "score": 100}` |
-| Get minigame status | GET | `/api/dbs2/minigames` | - |
-| Complete minigame | PUT | `/api/dbs2/minigames` | `{"ash_trail": true}` |
-| Get leaderboard | GET | `/api/dbs2/leaderboard?limit=10` | - |
-
-## JavaScript Quick Reference
-
-```javascript
-// After logging in, in browser console:
-
-// Read operations
-await DBS2API.getPlayer()
-await DBS2API.getCrypto()
-await DBS2API.getInventory()
-await DBS2API.getScores()
-await DBS2API.getMinigameStatus()
-await DBS2API.getLeaderboard(10)
-
-// Write operations
-await DBS2API.addCrypto(50)
-await DBS2API.setCrypto(1000)
-await DBS2API.addInventoryItem("Item Name", "location")
-await DBS2API.removeInventoryItem(0)
-await DBS2API.submitScore("game_name", 100)
-await DBS2API.completeMinigame("game_name")
-
-// Check window variables
-window.playerCrypto
-window.playerBalance
-window.playerInventory
-```
-
-## Test Accounts
-
-| User | Pass | Use For |
-|------|------|---------|
-| west | dbs2test | Full completion testing |
-| cyrus | dbs2test | Partial completion |
-| maya | dbs2test | Early game state |
-
-## File Locations
-
-```
-project/
-├── main.py                 # Server entry point
-├── model/
-│   └── dbs2_player.py     # Database model
-├── api/
-│   └── dbs2_api.py        # API endpoints
-├── templates/
-│   └── dbs2admin.html     # Admin dashboard
-└── assets/js/DBS2/
-    ├── DBS2API.js         # Frontend API client
-    └── StatsManager.js    # Legacy wrapper
-```
 
 ## Debugging Checklist
 
-- [ ] Is the server running? (Check terminal)
-- [ ] Am I logged in? (Check for session cookie)
-- [ ] Is the URL correct? (Check spelling and port)
-- [ ] Did I set Content-Type header for POST/PUT?
-- [ ] Is my JSON valid? (Use jsonlint.com to check)
-- [ ] What does the Network tab show?
-- [ ] What errors are in the Console?
-- [ ] What errors are in the Terminal?
+### Backend Not Responding
+```bash
+# Check if Flask is running
+curl http://localhost:8587/api/dbs2/leaderboard
+
+# Should return JSON, not HTML or error
+```
+
+### Authentication Issues
+```bash
+# In Postman, after POST /api/authenticate:
+# 1. Check response status is 200
+# 2. Check Cookies tab shows jwt_token_flask
+# 3. Try GET /api/dbs2/player immediately after
+```
+
+### CORS Issues (Frontend only)
+If frontend gets CORS errors but Postman works:
+```python
+# Check backend has:
+CORS(app, supports_credentials=True, origins=["http://localhost:4100"])
+```
+
+### Database Issues
+```bash
+# Reset test user's data via admin panel
+# Go to: http://localhost:8587/api/dbs2/admin
+# Or use Postman to set crypto to 0:
+PUT /api/dbs2/crypto
+{"crypto": 0}
+```
 
 ---
+
+## Complete Test Sequence
+
+### Postman Full Test:
+1. ✅ `POST /api/authenticate` → 200 + cookie set
+2. ✅ `GET /api/dbs2/player` → Returns user data
+3. ✅ `PUT /api/dbs2/crypto` `{"add": 100}` → Crypto increases
+4. ✅ `GET /api/dbs2/crypto` → Shows new balance
+5. ✅ `PUT /api/dbs2/minigames` `{"crypto_miner": true}` → Marked complete
+6. ✅ `GET /api/dbs2/leaderboard` → Shows updated data
+7. ✅ `GET /api/dbs2/bitcoin-boost` → Returns multiplier
+
+### Frontend Full Test:
+1. ✅ Login at `/login` page
+2. ✅ Navigate to game
+3. ✅ `await DBS2API.getPlayer()` in console → Returns data
+4. ✅ Play Crypto Miner → Bitcoin boost visible
+5. ✅ Complete minigame → Crypto awarded
+6. ✅ Check leaderboard updated
+
+---
+
+# PART 3: HTTP Status Codes Reference
+
+| Code | Name | What It Means | How to Fix |
+|------|------|---------------|------------|
+| 200 | OK | Success! | Nothing to fix |
+| 201 | Created | Resource created successfully | Nothing to fix |
+| 302 | Redirect | Not logged in, redirecting to login | Authenticate first |
+| 400 | Bad Request | Invalid JSON or missing required fields | Check request body format |
+| 401 | Unauthorized | Not logged in or token expired | Re-authenticate |
+| 403 | Forbidden | Logged in but not allowed to access | Check permissions |
+| 404 | Not Found | URL doesn't exist | Check endpoint URL |
+| 405 | Method Not Allowed | Wrong HTTP method (GET vs POST) | Check method type |
+| 500 | Internal Server Error | Python crashed | Check backend terminal for error |
+
+---
+
+# PART 4: How Cookies/JWT Work
+
+```
+1. POST /api/authenticate with username/password
+              ↓
+2. Server validates credentials
+              ↓
+3. Server creates JWT token
+              ↓
+4. Server sends "Set-Cookie: jwt_token_flask=eyJ..." header
+              ↓
+5. Browser/Postman stores cookie automatically
+              ↓
+6. All future requests include "Cookie: jwt_token_flask=eyJ..."
+              ↓
+7. Server reads cookie, decodes JWT, identifies user
+```
+
+### Cookie Problems:
+| Problem | Symptom | Fix |
+|---------|---------|-----|
+| No cookie | 302 redirect or 401 | Login again |
+| Expired cookie | 401 Unauthorized | Login again |
+| Wrong domain | Cookie not sent | Check URL matches |
+| Blocked by browser | Cookie not saved | Check browser settings |
+
+### JavaScript Must Include:
+```javascript
+fetch(url, {
+    credentials: 'include'  // ← This sends cookies!
+})
+```
+
+---
+
+# PART 5: Test Accounts
+
+| Username | Password | Notes |
+|----------|----------|-------|
+| west | dbs2test | Test user 1 |
+| cyrus | dbs2test | Test user 2 |
+| maya | dbs2test | Test user 3 |
+
+---
+
+# PART 6: Quick Troubleshooting
+
+### "I get HTML instead of JSON"
+- **Cause:** Backend redirecting to login page
+- **Fix:** Authenticate first, check cookie is set
+
+### "CORS error in browser but Postman works"
+- **Cause:** Browser enforces CORS, Postman doesn't
+- **Fix:** Backend needs `CORS(app, supports_credentials=True)`
+
+### "Cookie not being sent"
+- **Cause:** Missing `credentials: 'include'`
+- **Fix:** Check `fetchOptions` in config.js
+
+### "500 Internal Server Error"
+- **Cause:** Python exception on backend
+- **Fix:** Check terminal running Flask for stack trace
+
+### "DBS2API is undefined"
+- **Cause:** Script not loaded
+- **Fix:** Check Network tab for 404 on DBS2API.js
+
+### "Leaderboard shows fallback data"
+- **Cause:** No players exist yet or API error
+- **Fix:** Play a minigame to create player record
