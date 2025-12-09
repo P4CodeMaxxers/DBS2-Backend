@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, g
 from flask_restful import Api, Resource
-from flask_login import login_required, current_user
+from api.jwt_authorize import token_required
 from model.dbs2_player import DBS2Player
 
 dbs2_api = Blueprint('dbs2_api', __name__, url_prefix='/api/dbs2')
@@ -8,13 +8,15 @@ api = Api(dbs2_api)
 
 
 class PlayerData(Resource):
-    @login_required
+    @token_required()
     def get(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         return jsonify(player.read())
     
-    @login_required
+    @token_required()
     def post(self):
+        current_user = g.current_user
         player = DBS2Player.get_by_user_id(current_user.id)
         if player:
             return jsonify({'error': 'Player already exists'}), 400
@@ -23,8 +25,9 @@ class PlayerData(Resource):
         player.create()
         return jsonify(player.read()), 201
     
-    @login_required
+    @token_required()
     def put(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         data = request.get_json()
         
@@ -34,8 +37,9 @@ class PlayerData(Resource):
         player.update(data)
         return jsonify(player.read())
     
-    @login_required
+    @token_required()
     def delete(self):
+        current_user = g.current_user
         player = DBS2Player.get_by_user_id(current_user.id)
         if not player:
             return jsonify({'error': 'Player not found'}), 404
@@ -45,13 +49,15 @@ class PlayerData(Resource):
 
 
 class Crypto(Resource):
-    @login_required
+    @token_required()
     def get(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         return jsonify({'crypto': player.crypto})
     
-    @login_required
+    @token_required()
     def put(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         data = request.get_json()
         
@@ -64,13 +70,15 @@ class Crypto(Resource):
 
 
 class Inventory(Resource):
-    @login_required
+    @token_required()
     def get(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         return jsonify({'inventory': player.inventory})
     
-    @login_required
+    @token_required()
     def post(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         data = request.get_json()
         
@@ -86,12 +94,13 @@ class Inventory(Resource):
         player.add_inventory_item(item)
         return jsonify({'inventory': player.inventory})
     
-    @login_required
+    @token_required()
     def delete(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         data = request.get_json()
         
-        if 'index' not in data:
+        if not data or 'index' not in data:
             return jsonify({'error': 'Index required'}), 400
         
         removed = player.remove_inventory_item(data['index'])
@@ -101,13 +110,15 @@ class Inventory(Resource):
 
 
 class Scores(Resource):
-    @login_required
+    @token_required()
     def get(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         return jsonify({'scores': player.scores})
     
-    @login_required
+    @token_required()
     def put(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         data = request.get_json()
         
@@ -122,8 +133,9 @@ class Scores(Resource):
 
 
 class Minigames(Resource):
-    @login_required
+    @token_required()
     def get(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         return jsonify({
             'ash_trail': player._completed_ash_trail,
@@ -134,8 +146,9 @@ class Minigames(Resource):
             'completed_all': player._completed_all
         })
     
-    @login_required
+    @token_required()
     def put(self):
+        current_user = g.current_user
         player = DBS2Player.get_or_create(current_user.id)
         data = request.get_json()
         
@@ -164,6 +177,7 @@ class Minigames(Resource):
 
 
 class Leaderboard(Resource):
+    # No auth required - public endpoint
     def get(self):
         limit = request.args.get('limit', 10, type=int)
         leaderboard = DBS2Player.get_leaderboard(limit)
@@ -171,12 +185,8 @@ class Leaderboard(Resource):
 
 
 class AllPlayers(Resource):
-    @login_required
+    @token_required()
     def get(self):
-        if not hasattr(current_user, 'role') or current_user.role != 'Admin':
-            players = DBS2Player.get_all_players()
-            return jsonify({'players': players})
-        
         players = DBS2Player.get_all_players()
         return jsonify({'players': players})
 
@@ -194,7 +204,7 @@ class PlayerByUID(Resource):
         
         return jsonify(player.read())
     
-    @login_required
+    @token_required()
     def put(self, uid):
         from model.user import User
         user = User.query.filter_by(_uid=uid).first()
@@ -210,6 +220,61 @@ class PlayerByUID(Resource):
         return jsonify(player.read())
 
 
+class BitcoinBoost(Resource):
+    """
+    Get Bitcoin price data for crypto miner boost.
+    Uses CoinGecko API (free, no key required).
+    Returns a multiplier based on Bitcoin's 24h price change.
+    """
+    def get(self):
+        import requests
+        
+        try:
+            # CoinGecko API - free, no API key needed
+            url = "https://api.coingecko.com/api/v3/simple/price"
+            params = {
+                "ids": "bitcoin",
+                "vs_currencies": "usd",
+                "include_24hr_change": "true"
+            }
+            
+            response = requests.get(url, params=params, timeout=5)
+            
+            if response.status_code != 200:
+                return jsonify({
+                    'boost_multiplier': 1.0,
+                    'btc_change_24h': 0,
+                    'error': 'Failed to fetch Bitcoin data'
+                })
+            
+            data = response.json()
+            btc_data = data.get('bitcoin', {})
+            price = btc_data.get('usd', 0)
+            change_24h = btc_data.get('usd_24h_change', 0)
+            
+            # Calculate boost multiplier based on 24h change
+            # Positive change = bonus, negative change = penalty
+            # Example: +10% change = 1.5x multiplier, -10% = 0.5x
+            # Clamped between 0.5x and 2.0x
+            boost = 1.0 + (change_24h / 20)  # Divide by 20 to scale nicely
+            boost = max(0.5, min(2.0, boost))  # Clamp between 0.5 and 2.0
+            
+            return jsonify({
+                'boost_multiplier': round(boost, 2),
+                'btc_price_usd': round(price, 2),
+                'btc_change_24h': round(change_24h, 2),
+                'message': 'Bitcoin is up! Bonus crypto!' if change_24h > 0 else 'Bitcoin is down... reduced earnings'
+            })
+            
+        except Exception as e:
+            # If API fails, return neutral multiplier (no boost, no penalty)
+            return jsonify({
+                'boost_multiplier': 1.0,
+                'btc_change_24h': 0,
+                'error': str(e)
+            })
+
+
 api.add_resource(PlayerData, '/player')
 api.add_resource(Crypto, '/crypto')
 api.add_resource(Inventory, '/inventory')
@@ -218,3 +283,4 @@ api.add_resource(Minigames, '/minigames')
 api.add_resource(Leaderboard, '/leaderboard')
 api.add_resource(AllPlayers, '/players')
 api.add_resource(PlayerByUID, '/player/<string:uid>')
+api.add_resource(BitcoinBoost, '/bitcoin-boost')
