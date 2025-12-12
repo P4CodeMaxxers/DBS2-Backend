@@ -10,8 +10,9 @@
 
     <!-- Leaderboard Section -->
     <div class="card bg-dark text-light mb-4">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
             <h2 class="h5 mb-0">🏆 Leaderboard (Ranked by Crypto)</h2>
+            <small class="text-muted" id="leaderboardStatus">Auto-refreshing every 5s</small>
         </div>
         <div class="card-body">
             <table class="table table-dark table-striped" id="leaderboardTable">
@@ -107,6 +108,11 @@ const API_BASE = '/api/dbs2';
 
 async function loadLeaderboard() {
     try {
+        const statusEl = document.getElementById('leaderboardStatus');
+        if (statusEl) {
+            statusEl.textContent = 'Refreshing...';
+        }
+        
         const response = await fetch(`${API_BASE}/leaderboard?limit=10`);
         const data = await response.json();
         
@@ -137,10 +143,20 @@ async function loadLeaderboard() {
         } else {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center">No players found</td></tr>';
         }
+        
+        if (statusEl) {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString();
+            statusEl.textContent = `Auto-refreshing every 5s • Last updated: ${timeStr}`;
+        }
     } catch (error) {
         console.error('Error loading leaderboard:', error);
         document.getElementById('leaderboardBody').innerHTML = 
             '<tr><td colspan="6" class="text-center text-danger">Error loading data</td></tr>';
+        const statusEl = document.getElementById('leaderboardStatus');
+        if (statusEl) {
+            statusEl.textContent = 'Error loading • Auto-refreshing every 5s';
+        }
     }
 }
 
@@ -294,6 +310,11 @@ async function saveCrypto() {
 document.addEventListener('DOMContentLoaded', () => {
     loadLeaderboard();
     loadPlayers();
+    
+    // Auto-refresh leaderboard every 5 seconds
+    setInterval(() => {
+        loadLeaderboard();
+    }, 5000); // 5000 milliseconds = 5 seconds
 });
 </script>
 {% endblock %}
