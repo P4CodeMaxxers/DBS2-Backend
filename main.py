@@ -45,8 +45,9 @@ from model.study import Study, initStudies
 from model.classroom import Classroom
 from model.persona import Persona, initPersonas, initPersonaUsers
 from model.post import Post, init_posts
-from model.microblog import MicroBlog, Topic, initMicroblogs
-from hacks.jokes import initJokes 
+from model.microblog import MicroBlog, Topic, init_microblogs
+from hacks.jokes import initJokes
+from hacks.DBS2data import initDBS2
 # from model.announcement import Announcement ##temporary revert
 
 # server only Views
@@ -81,13 +82,15 @@ app.register_blueprint(study_api)
 app.register_blueprint(classroom_api)
 app.register_blueprint(feedback_api)
 app.register_blueprint(joke_api)  # Register the joke API blueprint
-app.register_blueprint(dbs2_api) #dbs2 api
+app.register_blueprint(DBS2_api)  # Register the Discord Basement Simulator 2 API blueprint
+app.register_blueprint(dbs2_api) # dbs2 database API
 app.register_blueprint(post_api)  # Register the social media post API
 # app.register_blueprint(announcement_api) ##temporary revert
 
 # Jokes file initialization
 with app.app_context():
     initJokes()
+    initDBS2()
     initDBS2Players()
 
 
