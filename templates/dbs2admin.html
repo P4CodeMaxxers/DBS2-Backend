@@ -2,32 +2,76 @@
 {% set project = "DBS2 Admin" %}
 
 {% block body %}
-<div class="container py-4">
+<div class="container-fluid py-4">
     <header class="pb-3 mb-4 border-bottom border-primary text-light">
-        <h1 class="fs-4">DBS2 Admin Dashboard</h1>
-        <p class="text-muted">View all player data, leaderboard, and game statistics</p>
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="fs-4">🎮 DBS2 Admin Dashboard</h1>
+                <p class="text-muted mb-0">Manage player crypto, inventory, and game progress</p>
+            </div>
+            <div>
+                <button class="btn btn-success me-2" onclick="openBulkCryptoModal()">💰 Bulk Add Crypto</button>
+                <button class="btn btn-outline-light" onclick="refreshAll()">🔄 Refresh All</button>
+            </div>
+        </div>
     </header>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-dark text-light border-primary">
+                <div class="card-body text-center">
+                    <h2 class="display-6 text-primary" id="statTotalPlayers">-</h2>
+                    <p class="text-muted mb-0">Total Players</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-light border-warning">
+                <div class="card-body text-center">
+                    <h2 class="display-6 text-warning" id="statTotalCrypto">-</h2>
+                    <p class="text-muted mb-0">Total Crypto</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-light border-info">
+                <div class="card-body text-center">
+                    <h2 class="display-6 text-info" id="statAvgCrypto">-</h2>
+                    <p class="text-muted mb-0">Avg Crypto</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-light border-success">
+                <div class="card-body text-center">
+                    <h2 class="display-6 text-success" id="statCompletions">-</h2>
+                    <p class="text-muted mb-0">Total Completions</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Leaderboard Section -->
     <div class="card bg-dark text-light mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h2 class="h5 mb-0">🏆 Leaderboard (Ranked by Crypto)</h2>
-            <small class="text-muted" id="leaderboardStatus">Auto-refreshing every 5s</small>
+            <h2 class="h5 mb-0">🏆 Leaderboard (Top 10 by Crypto)</h2>
+            <small class="text-muted" id="leaderboardStatus">Loading...</small>
         </div>
-        <div class="card-body">
-            <table class="table table-dark table-striped" id="leaderboardTable">
+        <div class="card-body p-0">
+            <table class="table table-dark table-striped table-hover mb-0">
                 <thead>
                     <tr>
-                        <th>Rank</th>
+                        <th width="60">Rank</th>
                         <th>Player</th>
                         <th>UID</th>
                         <th>Crypto</th>
-                        <th>Minigames Completed</th>
-                        <th>All Complete</th>
+                        <th>Scraps</th>
+                        <th>Minigames</th>
                     </tr>
                 </thead>
                 <tbody id="leaderboardBody">
-                    <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                    <tr><td colspan="6" class="text-center py-4">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -35,286 +79,596 @@
 
     <!-- All Players Section -->
     <div class="card bg-dark text-light mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <h2 class="h5 mb-0">👥 All Players</h2>
-            <button class="btn btn-sm btn-primary" onclick="loadPlayers()">Refresh</button>
+        <div class="card-header">
+            <div class="row align-items-center">
+                <div class="col-md-4">
+                    <h2 class="h5 mb-0">👥 All Players</h2>
+                </div>
+                <div class="col-md-4">
+                    <input type="text" class="form-control form-control-sm bg-secondary text-light border-0" 
+                           id="searchInput" placeholder="🔍 Search by name or UID...">
+                </div>
+                <div class="col-md-4 text-end">
+                    <select class="form-select form-select-sm bg-secondary text-light border-0 d-inline-block w-auto" id="sortSelect">
+                        <option value="crypto">Sort: Crypto ↓</option>
+                        <option value="name">Sort: Name A-Z</option>
+                        <option value="updated">Sort: Last Active</option>
+                    </select>
+                </div>
+            </div>
         </div>
-        <div class="card-body">
+        <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-dark table-striped table-hover" id="playersTable">
+                <table class="table table-dark table-striped table-hover mb-0">
                     <thead>
                         <tr>
+                            <th>#</th>
+                            <th>Player</th>
                             <th>UID</th>
-                            <th>Name</th>
                             <th>Crypto</th>
-                            <th>Inventory</th>
-                            <th>Scores</th>
-                            <th>Progress</th>
-                            <th>Actions</th>
+                            <th>Scraps</th>
+                            <th>Minigames</th>
+                            <th>Last Active</th>
+                            <th width="260">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="playersBody">
-                        <tr><td colspan="7" class="text-center">Loading...</td></tr>
+                        <tr><td colspan="8" class="text-center py-4">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Player Detail Modal -->
-    <div class="modal fade" id="playerModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content bg-dark text-light">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="playerModalTitle">Player Details</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="playerModalBody">
-                    <!-- Player details will be loaded here -->
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
+<!-- Player Detail Modal -->
+<div class="modal fade" id="playerModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="playerModalTitle">Player Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-        </div>
-    </div>
-
-    <!-- Edit Crypto Modal -->
-    <div class="modal fade" id="editCryptoModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content bg-dark text-light">
-                <div class="modal-header">
-                    <h5 class="modal-title">Edit Crypto</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" id="editCryptoUID">
-                    <div class="mb-3">
-                        <label class="form-label">New Crypto Value</label>
-                        <input type="number" class="form-control" id="editCryptoValue" min="0">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveCrypto()">Save</button>
-                </div>
+            <div class="modal-body" id="playerModalBody"></div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- Edit Crypto Modal -->
+<div class="modal fade" id="editCryptoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">💰 Edit Crypto - <span id="editCryptoPlayerName"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editCryptoUID">
+                <div class="mb-3">
+                    <label class="form-label">Current Crypto</label>
+                    <input type="text" class="form-control bg-secondary text-light" id="currentCryptoDisplay" disabled>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Set Crypto To</label>
+                    <input type="number" class="form-control bg-secondary text-light" id="editCryptoValue" min="0" placeholder="Enter amount">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Quick Adjust</label>
+                    <div class="btn-group w-100">
+                        <button class="btn btn-outline-danger" onclick="quickAdjust(-100)">-100</button>
+                        <button class="btn btn-outline-danger" onclick="quickAdjust(-50)">-50</button>
+                        <button class="btn btn-outline-success" onclick="quickAdjust(50)">+50</button>
+                        <button class="btn btn-outline-success" onclick="quickAdjust(100)">+100</button>
+                        <button class="btn btn-outline-success" onclick="quickAdjust(250)">+250</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="resetPlayerCrypto()">Reset to 0</button>
+                <button type="button" class="btn btn-primary" onclick="saveCrypto()">💾 Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Inventory Modal -->
+<div class="modal fade" id="editInventoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">📦 Edit Inventory - <span id="editInventoryPlayerName"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editInventoryUID">
+                
+                <h6 class="text-warning mb-3">🧩 Code Scraps (Minigame Rewards)</h6>
+                <div class="row mb-4">
+                    <div class="col-6 col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="scrap_crypto_miner">
+                            <label class="form-check-label" for="scrap_crypto_miner">⛏️ Crypto Miner</label>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="scrap_infinite_user">
+                            <label class="form-check-label" for="scrap_infinite_user">💻 Infinite User</label>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="scrap_laundry">
+                            <label class="form-check-label" for="scrap_laundry">🧺 Laundry</label>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="scrap_ash_trail">
+                            <label class="form-check-label" for="scrap_ash_trail">📚 Ash Trail</label>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-4 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="scrap_whackarat">
+                            <label class="form-check-label" for="scrap_whackarat">🐀 Whack-a-Rat</label>
+                        </div>
+                    </div>
+                </div>
+
+                <h6 class="text-info mb-3">📋 Current Inventory Items</h6>
+                <div id="currentInventoryList" class="mb-3" style="max-height: 200px; overflow-y: auto;"></div>
+
+                <h6 class="text-success mb-3">➕ Add Custom Item</h6>
+                <div class="row g-2">
+                    <div class="col-md-5">
+                        <input type="text" class="form-control bg-secondary text-light" id="newItemName" placeholder="Item name">
+                    </div>
+                    <div class="col-md-5">
+                        <input type="text" class="form-control bg-secondary text-light" id="newItemLocation" placeholder="Found at">
+                    </div>
+                    <div class="col-md-2">
+                        <button class="btn btn-success w-100" onclick="addCustomItem()">Add</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" onclick="clearInventory()">🗑️ Clear All</button>
+                <button type="button" class="btn btn-primary" onclick="saveInventory()">💾 Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Crypto Modal -->
+<div class="modal fade" id="bulkCryptoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title">💰 Bulk Add Crypto</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Amount to add to ALL players</label>
+                    <input type="number" class="form-control bg-secondary text-light" id="bulkCryptoAmount" placeholder="e.g., 50">
+                </div>
+                <div class="alert alert-warning">⚠️ This affects ALL players in the database.</div>
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="executeBulkCrypto()">Add to All</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.inventory-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    margin-bottom: 6px;
+}
+.inventory-item:hover { background: rgba(255,255,255,0.1); }
+</style>
+
 <script>
 const API_BASE = '/api/dbs2';
+let allPlayers = [];
+let currentEditInventory = [];
+
+// ============ DATA LOADING ============
+
+async function loadStats() {
+    try {
+        const response = await fetch(`${API_BASE}/admin/stats`);
+        if (!response.ok) throw new Error('Failed');
+        const data = await response.json();
+        
+        document.getElementById('statTotalPlayers').textContent = data.total_players || 0;
+        document.getElementById('statTotalCrypto').textContent = (data.total_crypto_in_circulation || 0).toLocaleString();
+        document.getElementById('statAvgCrypto').textContent = Math.round(data.average_crypto || 0);
+        
+        const completions = data.minigame_completions || {};
+        const total = Object.values(completions).reduce((a, b) => a + b, 0);
+        document.getElementById('statCompletions').textContent = total;
+    } catch (e) {
+        console.error('Stats error:', e);
+    }
+}
 
 async function loadLeaderboard() {
     try {
-        const statusEl = document.getElementById('leaderboardStatus');
-        if (statusEl) {
-            statusEl.textContent = 'Refreshing...';
-        }
+        document.getElementById('leaderboardStatus').textContent = 'Refreshing...';
         
         const response = await fetch(`${API_BASE}/leaderboard?limit=10`);
+        if (!response.ok) throw new Error('Failed');
         const data = await response.json();
         
         const tbody = document.getElementById('leaderboardBody');
-        tbody.innerHTML = '';
         
         if (data.leaderboard && data.leaderboard.length > 0) {
-            data.leaderboard.forEach(player => {
-                const completedCount = [
-                    player.completed_ash_trail,
-                    player.completed_crypto_miner,
-                    player.completed_whackarat,
-                    player.completed_laundry,
-                    player.completed_infinite_user
-                ].filter(Boolean).length;
+            tbody.innerHTML = data.leaderboard.map(p => {
+                const scraps = countScraps(p);
+                const badges = renderMinigameBadges(p);
+                const rankClass = p.rank === 1 ? 'bg-warning text-dark' : 
+                                  p.rank === 2 ? 'bg-secondary' : 
+                                  p.rank === 3 ? 'bg-danger' : 'bg-dark';
                 
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td><span class="badge ${player.rank <= 3 ? 'bg-warning text-dark' : 'bg-secondary'}">#${player.rank}</span></td>
-                    <td>${player.user_info.name || 'Unknown'}</td>
-                    <td><code>${player.user_info.uid || 'N/A'}</code></td>
-                    <td><strong>${player.crypto}</strong> 🪙</td>
-                    <td>${completedCount}/5</td>
-                    <td>${player.completed_all ? '✅' : '❌'}</td>
-                `;
-                tbody.appendChild(row);
-            });
+                return `<tr>
+                    <td><span class="badge ${rankClass}">#${p.rank}</span></td>
+                    <td><strong>${p.user_info?.name || 'Unknown'}</strong></td>
+                    <td><code>${p.user_info?.uid || 'N/A'}</code></td>
+                    <td><strong class="text-warning">${(p.crypto || 0).toLocaleString()}</strong></td>
+                    <td><span class="badge ${scraps === 5 ? 'bg-success' : 'bg-secondary'}">${scraps}/5</span></td>
+                    <td>${badges}</td>
+                </tr>`;
+            }).join('');
         } else {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No players found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No players yet</td></tr>';
         }
         
-        if (statusEl) {
-            const now = new Date();
-            const timeStr = now.toLocaleTimeString();
-            statusEl.textContent = `Auto-refreshing every 5s • Last updated: ${timeStr}`;
-        }
-    } catch (error) {
-        console.error('Error loading leaderboard:', error);
-        document.getElementById('leaderboardBody').innerHTML = 
-            '<tr><td colspan="6" class="text-center text-danger">Error loading data</td></tr>';
-        const statusEl = document.getElementById('leaderboardStatus');
-        if (statusEl) {
-            statusEl.textContent = 'Error loading • Auto-refreshing every 5s';
-        }
+        document.getElementById('leaderboardStatus').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+    } catch (e) {
+        console.error('Leaderboard error:', e);
+        document.getElementById('leaderboardBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">Error loading</td></tr>';
     }
 }
 
 async function loadPlayers() {
     try {
-        const response = await fetch(`${API_BASE}/players`);
+        const sort = document.getElementById('sortSelect').value;
+        const response = await fetch(`${API_BASE}/admin/players?sort=${sort}`);
+        if (!response.ok) throw new Error('Failed');
         const data = await response.json();
         
-        const tbody = document.getElementById('playersBody');
-        tbody.innerHTML = '';
-        
-        if (data.players && data.players.length > 0) {
-            data.players.forEach(player => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td><code>${player.user_info.uid || 'N/A'}</code></td>
-                    <td>${player.user_info.name || 'Unknown'}</td>
-                    <td><strong>${player.crypto}</strong></td>
-                    <td>${player.inventory.length} items</td>
-                    <td>${Object.keys(player.scores).length} games</td>
-                    <td>
-                        ${player.completed_ash_trail ? '📚' : ''}
-                        ${player.completed_crypto_miner ? '⛏️' : ''}
-                        ${player.completed_whackarat ? '🐀' : ''}
-                        ${player.completed_laundry ? '🧺' : ''}
-                        ${player.completed_infinite_user ? '💻' : ''}
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-info" onclick="viewPlayer('${player.user_info.uid}')">View</button>
-                        <button class="btn btn-sm btn-warning" onclick="editCrypto('${player.user_info.uid}', ${player.crypto})">Edit Crypto</button>
-                    </td>
-                `;
-                tbody.appendChild(row);
-            });
-        } else {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No players found</td></tr>';
-        }
-    } catch (error) {
-        console.error('Error loading players:', error);
-        document.getElementById('playersBody').innerHTML = 
-            '<tr><td colspan="7" class="text-center text-danger">Error loading data</td></tr>';
+        allPlayers = data.players || [];
+        renderPlayers();
+    } catch (e) {
+        console.error('Players error:', e);
+        document.getElementById('playersBody').innerHTML = '<tr><td colspan="8" class="text-center text-danger">Error loading</td></tr>';
     }
 }
+
+function renderPlayers() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const filtered = allPlayers.filter(p => {
+        const name = (p.user_info?.name || '').toLowerCase();
+        const uid = (p.user_info?.uid || '').toLowerCase();
+        return name.includes(search) || uid.includes(search);
+    });
+    
+    const tbody = document.getElementById('playersBody');
+    
+    if (filtered.length > 0) {
+        tbody.innerHTML = filtered.map((p, idx) => {
+            const scraps = countScraps(p);
+            const badges = renderMinigameBadges(p);
+            const lastActive = p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '-';
+            const uid = p.user_info?.uid || '';
+            const name = p.user_info?.name || 'Unknown';
+            
+            return `<tr>
+                <td>${p.rank || idx + 1}</td>
+                <td><strong>${name}</strong></td>
+                <td><code>${uid}</code></td>
+                <td><strong class="text-warning">${(p.crypto || 0).toLocaleString()}</strong></td>
+                <td><span class="badge ${scraps === 5 ? 'bg-success' : 'bg-secondary'}">${scraps}/5</span></td>
+                <td>${badges}</td>
+                <td><small class="text-muted">${lastActive}</small></td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="viewPlayer('${uid}')">👁️</button>
+                    <button class="btn btn-sm btn-warning" onclick="openEditCrypto('${uid}', '${name}', ${p.crypto || 0})">💰</button>
+                    <button class="btn btn-sm btn-success" onclick="openEditInventory('${uid}', '${name}')">📦</button>
+                    <button class="btn btn-sm btn-outline-light" onclick="quickAdd('${uid}', 50)">+50</button>
+                </td>
+            </tr>`;
+        }).join('');
+    } else {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-muted">No players found</td></tr>';
+    }
+}
+
+// ============ HELPERS ============
+
+function countScraps(p) {
+    // Handle both formats: individual fields or minigames_completed dict
+    const mg = p.minigames_completed || {};
+    return [
+        p.completed_crypto_miner || mg.crypto_miner,
+        p.completed_infinite_user || mg.infinite_user,
+        p.completed_laundry || mg.laundry,
+        p.completed_ash_trail || mg.ash_trail,
+        p.completed_whackarat || mg.whackarat
+    ].filter(Boolean).length;
+}
+
+function renderMinigameBadges(p) {
+    const mg = p.minigames_completed || {};
+    const games = [
+        { key: 'crypto_miner', field: 'completed_crypto_miner', icon: '⛏️' },
+        { key: 'infinite_user', field: 'completed_infinite_user', icon: '💻' },
+        { key: 'laundry', field: 'completed_laundry', icon: '🧺' },
+        { key: 'ash_trail', field: 'completed_ash_trail', icon: '📚' },
+        { key: 'whackarat', field: 'completed_whackarat', icon: '🐀' }
+    ];
+    
+    return games.map(g => {
+        const done = p[g.field] || mg[g.key];
+        return `<span class="badge ${done ? 'bg-success' : 'bg-secondary'}" style="font-size:10px;margin:1px;">${g.icon}</span>`;
+    }).join('');
+}
+
+// ============ VIEW PLAYER ============
 
 async function viewPlayer(uid) {
     try {
         const response = await fetch(`${API_BASE}/player/${uid}`);
-        const player = await response.json();
+        if (!response.ok) throw new Error('Not found');
+        const p = await response.json();
         
-        document.getElementById('playerModalTitle').textContent = 
-            `Player: ${player.user_info.name || uid}`;
-        
+        document.getElementById('playerModalTitle').textContent = `Player: ${p.user_info?.name || uid}`;
         document.getElementById('playerModalBody').innerHTML = `
             <div class="row">
                 <div class="col-md-6">
-                    <h6>Basic Info</h6>
+                    <h6 class="text-primary">📊 Info</h6>
                     <ul class="list-unstyled">
-                        <li><strong>UID:</strong> ${player.user_info.uid}</li>
-                        <li><strong>Name:</strong> ${player.user_info.name}</li>
-                        <li><strong>Crypto:</strong> ${player.crypto} 🪙</li>
-                        <li><strong>Escaped:</strong> ${player.escaped ? 'Yes ✅' : 'No ❌'}</li>
+                        <li><strong>UID:</strong> <code>${p.user_info?.uid}</code></li>
+                        <li><strong>Name:</strong> ${p.user_info?.name}</li>
+                        <li><strong>Crypto:</strong> <span class="text-warning">${(p.crypto || 0).toLocaleString()}</span></li>
+                        <li><strong>Escaped:</strong> ${p.escaped ? '✅' : '❌'}</li>
+                        <li><strong>All Complete:</strong> ${p.completed_all ? '✅' : '❌'}</li>
                     </ul>
-                </div>
-                <div class="col-md-6">
-                    <h6>Minigame Progress</h6>
+                    
+                    <h6 class="text-success mt-3">🎮 Minigames</h6>
                     <ul class="list-unstyled">
-                        <li>📚 Ash Trail: ${player.completed_ash_trail ? '✅' : '❌'}</li>
-                        <li>⛏️ Crypto Miner: ${player.completed_crypto_miner ? '✅' : '❌'}</li>
-                        <li>🐀 Whack-a-Rat: ${player.completed_whackarat ? '✅' : '❌'}</li>
-                        <li>🧺 Laundry: ${player.completed_laundry ? '✅' : '❌'}</li>
-                        <li>💻 Infinite User: ${player.completed_infinite_user ? '✅' : '❌'}</li>
-                        <li><strong>All Complete:</strong> ${player.completed_all ? '✅' : '❌'}</li>
-                    </ul>
-                </div>
-            </div>
-            <hr>
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Inventory (${player.inventory.length} items)</h6>
-                    <ul class="list-group list-group-flush bg-dark">
-                        ${player.inventory.length > 0 
-                            ? player.inventory.map(item => `
-                                <li class="list-group-item bg-dark text-light">
-                                    <strong>${item.name}</strong> 
-                                    <small class="text-muted">(found at: ${item.found_at})</small>
-                                </li>
-                            `).join('')
-                            : '<li class="list-group-item bg-dark text-muted">No items</li>'
-                        }
+                        <li>⛏️ Crypto Miner: ${p.completed_crypto_miner ? '✅' : '❌'}</li>
+                        <li>💻 Infinite User: ${p.completed_infinite_user ? '✅' : '❌'}</li>
+                        <li>🧺 Laundry: ${p.completed_laundry ? '✅' : '❌'}</li>
+                        <li>📚 Ash Trail: ${p.completed_ash_trail ? '✅' : '❌'}</li>
+                        <li>🐀 Whack-a-Rat: ${p.completed_whackarat ? '✅' : '❌'}</li>
                     </ul>
                 </div>
                 <div class="col-md-6">
-                    <h6>High Scores</h6>
-                    <ul class="list-group list-group-flush bg-dark">
-                        ${Object.keys(player.scores).length > 0 
-                            ? Object.entries(player.scores).map(([game, score]) => `
-                                <li class="list-group-item bg-dark text-light">
-                                    <strong>${game}:</strong> ${score}
-                                </li>
-                            `).join('')
-                            : '<li class="list-group-item bg-dark text-muted">No scores yet</li>'
-                        }
-                    </ul>
+                    <h6 class="text-warning">📦 Inventory (${(p.inventory || []).length})</h6>
+                    ${(p.inventory || []).length > 0 
+                        ? `<ul class="list-unstyled">${p.inventory.map(i => 
+                            `<li>• <strong>${i.name || i}</strong> <small class="text-muted">(${i.found_at || '?'})</small></li>`
+                        ).join('')}</ul>`
+                        : '<p class="text-muted">Empty</p>'}
+                    
+                    <h6 class="text-info mt-3">🏆 Scores</h6>
+                    ${Object.keys(p.scores || {}).length > 0 
+                        ? `<ul class="list-unstyled">${Object.entries(p.scores).map(([g, s]) => 
+                            `<li>• ${g}: <strong>${s}</strong></li>`
+                        ).join('')}</ul>`
+                        : '<p class="text-muted">No scores</p>'}
                 </div>
-            </div>
-            <hr>
-            <small class="text-muted">
-                Created: ${player.created_at || 'N/A'}<br>
-                Last Updated: ${player.updated_at || 'N/A'}
-            </small>
-        `;
+            </div>`;
         
         new bootstrap.Modal(document.getElementById('playerModal')).show();
-    } catch (error) {
-        console.error('Error loading player:', error);
-        alert('Error loading player data');
+    } catch (e) {
+        alert('Error loading player');
     }
 }
 
-function editCrypto(uid, currentValue) {
+// ============ EDIT CRYPTO ============
+
+function openEditCrypto(uid, name, crypto) {
     document.getElementById('editCryptoUID').value = uid;
-    document.getElementById('editCryptoValue').value = currentValue;
+    document.getElementById('editCryptoPlayerName').textContent = name;
+    document.getElementById('currentCryptoDisplay').value = crypto;
+    document.getElementById('editCryptoValue').value = crypto;
     new bootstrap.Modal(document.getElementById('editCryptoModal')).show();
+}
+
+function quickAdjust(amount) {
+    const input = document.getElementById('editCryptoValue');
+    input.value = Math.max(0, (parseInt(input.value) || 0) + amount);
 }
 
 async function saveCrypto() {
     const uid = document.getElementById('editCryptoUID').value;
-    const crypto = parseInt(document.getElementById('editCryptoValue').value);
+    const value = document.getElementById('editCryptoValue').value;
     
     try {
         const response = await fetch(`${API_BASE}/player/${uid}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ crypto: crypto })
+            body: JSON.stringify({ crypto: parseInt(value) })
         });
+        if (!response.ok) throw new Error('Failed');
         
-        if (response.ok) {
-            bootstrap.Modal.getInstance(document.getElementById('editCryptoModal')).hide();
-            loadPlayers();
-            loadLeaderboard();
-        } else {
-            alert('Error updating crypto');
-        }
-    } catch (error) {
-        console.error('Error saving crypto:', error);
-        alert('Error saving changes');
+        bootstrap.Modal.getInstance(document.getElementById('editCryptoModal')).hide();
+        refreshAll();
+    } catch (e) {
+        alert('Error saving');
     }
 }
 
-// Load data on page load
-document.addEventListener('DOMContentLoaded', () => {
+async function resetPlayerCrypto() {
+    const uid = document.getElementById('editCryptoUID').value;
+    if (!confirm('Reset crypto to 0?')) return;
+    
+    document.getElementById('editCryptoValue').value = 0;
+    await saveCrypto();
+}
+
+async function quickAdd(uid, amount) {
+    try {
+        await fetch(`${API_BASE}/player/${uid}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ add_crypto: amount })
+        });
+        refreshAll();
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// ============ EDIT INVENTORY ============
+
+async function openEditInventory(uid, name) {
+    document.getElementById('editInventoryUID').value = uid;
+    document.getElementById('editInventoryPlayerName').textContent = name;
+    
+    try {
+        const response = await fetch(`${API_BASE}/player/${uid}`);
+        const p = await response.json();
+        
+        currentEditInventory = p.inventory || [];
+        
+        // Set checkboxes based on completion status
+        document.getElementById('scrap_crypto_miner').checked = p.completed_crypto_miner || false;
+        document.getElementById('scrap_infinite_user').checked = p.completed_infinite_user || false;
+        document.getElementById('scrap_laundry').checked = p.completed_laundry || false;
+        document.getElementById('scrap_ash_trail').checked = p.completed_ash_trail || false;
+        document.getElementById('scrap_whackarat').checked = p.completed_whackarat || false;
+        
+        renderInventoryList();
+        new bootstrap.Modal(document.getElementById('editInventoryModal')).show();
+    } catch (e) {
+        alert('Error loading inventory');
+    }
+}
+
+function renderInventoryList() {
+    const container = document.getElementById('currentInventoryList');
+    if (currentEditInventory.length === 0) {
+        container.innerHTML = '<p class="text-muted">No items</p>';
+        return;
+    }
+    container.innerHTML = currentEditInventory.map((item, idx) => `
+        <div class="inventory-item">
+            <span><strong>${item.name || item}</strong> <small class="text-muted">(${item.found_at || '?'})</small></span>
+            <button class="btn btn-sm btn-outline-danger" onclick="removeItem(${idx})">🗑️</button>
+        </div>
+    `).join('');
+}
+
+function removeItem(idx) {
+    currentEditInventory.splice(idx, 1);
+    renderInventoryList();
+}
+
+function addCustomItem() {
+    const name = document.getElementById('newItemName').value.trim();
+    const loc = document.getElementById('newItemLocation').value.trim() || 'admin';
+    if (!name) return alert('Enter item name');
+    
+    currentEditInventory.push({ name, found_at: loc, timestamp: new Date().toISOString() });
+    document.getElementById('newItemName').value = '';
+    document.getElementById('newItemLocation').value = '';
+    renderInventoryList();
+}
+
+function clearInventory() {
+    if (!confirm('Clear all items?')) return;
+    currentEditInventory = [];
+    renderInventoryList();
+}
+
+async function saveInventory() {
+    const uid = document.getElementById('editInventoryUID').value;
+    
+    // Build update data
+    const updateData = {
+        inventory: currentEditInventory,
+        completed_crypto_miner: document.getElementById('scrap_crypto_miner').checked,
+        completed_infinite_user: document.getElementById('scrap_infinite_user').checked,
+        completed_laundry: document.getElementById('scrap_laundry').checked,
+        completed_ash_trail: document.getElementById('scrap_ash_trail').checked,
+        completed_whackarat: document.getElementById('scrap_whackarat').checked
+    };
+    
+    try {
+        const response = await fetch(`${API_BASE}/player/${uid}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updateData)
+        });
+        if (!response.ok) throw new Error('Failed');
+        
+        bootstrap.Modal.getInstance(document.getElementById('editInventoryModal')).hide();
+        refreshAll();
+    } catch (e) {
+        alert('Error saving');
+    }
+}
+
+// ============ BULK OPERATIONS ============
+
+function openBulkCryptoModal() {
+    document.getElementById('bulkCryptoAmount').value = '';
+    new bootstrap.Modal(document.getElementById('bulkCryptoModal')).show();
+}
+
+async function executeBulkCrypto() {
+    const amount = parseInt(document.getElementById('bulkCryptoAmount').value);
+    if (isNaN(amount) || amount === 0) return alert('Enter valid amount');
+    if (!confirm(`Add ${amount} crypto to ALL players?`)) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/admin/bulk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'add_crypto', amount })
+        });
+        const result = await response.json();
+        alert(`Updated ${result.affected_players} players`);
+        
+        bootstrap.Modal.getInstance(document.getElementById('bulkCryptoModal')).hide();
+        refreshAll();
+    } catch (e) {
+        alert('Error');
+    }
+}
+
+// ============ REFRESH ============
+
+function refreshAll() {
+    loadStats();
     loadLeaderboard();
     loadPlayers();
-    
-    // Auto-refresh leaderboard every 5 seconds
-    setInterval(() => {
-        loadLeaderboard();
-    }, 5000); // 5000 milliseconds = 5 seconds
+}
+
+// ============ INIT ============
+
+document.addEventListener('DOMContentLoaded', () => {
+    refreshAll();
+    setInterval(loadLeaderboard, 5000);
+    document.getElementById('searchInput').addEventListener('input', renderPlayers);
+    document.getElementById('sortSelect').addEventListener('change', loadPlayers);
 });
 </script>
 {% endblock %}
