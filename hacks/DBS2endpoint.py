@@ -11,58 +11,54 @@ DBS2_api = Blueprint('DBS2_api', __name__,
 # API generator https://flask-restful.readthedocs.io/en/latest/api.html#id1
 api = Api(DBS2_api)
 
-class DBS2api:
+class DBS2API:
     # not implemented
     class _Create(Resource):
-        def post(self, joke):
+        def post(self, item):
             pass
             
-    # getJokes()
+    # getDBS2Items()
     class _Read(Resource):
         def get(self):
-            return jsonify(getJokes())
-        def put(self):
-            return "i love apis"
-    
+            return jsonify(getDBS2Items())
 
-
-    # getJoke(id)
+    # getDBS2Item(id)
     class _ReadID(Resource):
         def get(self, id):
-            return jsonify(getJoke(id))
+            return jsonify(getDBS2Item(id))
 
-    # getRandomJoke()
+    # getRandomDBS2Item()
     class _ReadRandom(Resource):
         def get(self):
-            return jsonify(getRandomJoke())
+            return jsonify(getRandomDBS2Item())
     
-    # getRandomJoke()
+    # countDBS2Items()
     class _ReadCount(Resource):
         def get(self):
-            count = countJokes()
+            count = countDBS2Items()
             countMsg = {'count': count}
             return jsonify(countMsg)
 
-    # put method: addJokeHaHa
+    # put method: addDBS2Like
     class _UpdateLike(Resource):
         def put(self, id):
-            addJokeHaHa(id)
-            return jsonify(getJoke(id))
+            addDBS2Like(id)
+            return jsonify(getDBS2Item(id))
 
-    # put method: addJokeBooHoo
-    class _UpdateJeer(Resource):
+    # put method: addDBS2Dislike
+    class _UpdateDislike(Resource):
         def put(self, id):
-            addJokeBooHoo(id)
-            return jsonify(getJoke(id))
+            addDBS2Dislike(id)
+            return jsonify(getDBS2Item(id))
 
     # building RESTapi resources/interfaces, these routes are added to Web Server
-    api.add_resource(_Create, '/create/<string:joke>', '/create/<string:joke>/')
+    api.add_resource(_Create, '/create/<string:item>', '/create/<string:item>/')
     api.add_resource(_Read, "", '/')
     api.add_resource(_ReadID, '/<int:id>', '/<int:id>/')
     api.add_resource(_ReadRandom, '/random', '/random/')
     api.add_resource(_ReadCount, '/count', '/count/')
     api.add_resource(_UpdateLike, '/like/<int:id>', '/like/<int:id>/')
-    api.add_resource(_UpdateJeer, '/jeer/<int:id>', '/jeer/<int:id>/')
+    api.add_resource(_UpdateDislike, '/dislike/<int:id>', '/dislike/<int:id>/')
 
 if __name__ == "__main__": 
     # server = "http://127.0.0.1:5000" # run local
@@ -70,7 +66,7 @@ if __name__ == "__main__":
     url = server + "/api/DBS2"
     responses = []  # responses list
 
-    # get count of jokes on server
+    # get count of items on server
     count_response = requests.get(url+"/count")
     count_json = count_response.json()
     count = count_json['count']
@@ -78,18 +74,18 @@ if __name__ == "__main__":
     # update likes/dislikes test sequence
     num = str(random.randint(0, count-1)) # test a random record
     responses.append(
-        requests.get(url+"/"+num)  # read joke by id
+        requests.get(url+"/"+num)  # read item by id
         ) 
     responses.append(
         requests.put(url+"/like/"+num) # add to like count
         ) 
     responses.append(
-        requests.put(url+"/jeer/"+num) # add to jeer count
+        requests.put(url+"/dislike/"+num) # add to dislike count
         ) 
 
-    # obtain a random joke
+    # obtain a random item
     responses.append(
-        requests.get(url+"/random")  # read a random joke
+        requests.get(url+"/random")  # read a random item
         ) 
 
     # cycle through responses
@@ -98,4 +94,5 @@ if __name__ == "__main__":
         try:
             print(response.json())
         except:
+            print("unknown error")
             print("unknown error")
