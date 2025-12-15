@@ -76,9 +76,6 @@ class UserAPI:
             # Read data for json body
             body = request.get_json()
             
-            # Debug logging
-            #print(f"Received signup request with body: {body}")
-            
             ''' Avoid garbage in, error checking '''
             # validate name
             name = body.get('name')
@@ -90,10 +87,10 @@ class UserAPI:
             if uid is None or len(uid) < 2:
                 return {'message': f'User ID is missing, or is less than 2 characters'}, 400
           
-            # check if uid is a GitHub account
-            _, status = GitHubUser().get(uid)
-            if status != 200:
-                return {'message': f'User ID {uid} not a valid GitHub account' }, 404
+            # DISABLED: GitHub validation not needed for DBS2
+            # _, status = GitHubUser().get(uid)
+            # if status != 200:
+            #     return {'message': f'User ID {uid} not a valid GitHub account' }, 404
             
             ''' User object creation '''
             #1: Setup minimal User object using __init__ method
@@ -128,30 +125,23 @@ class UserAPI:
             
             # Remove None values
             cleaned_body = {k: v for k, v in cleaned_body.items() if v is not None}
-            
-            # print(f"Cleaned body for user creation: {cleaned_body}")
 
             #2: Save the User object to the database using custom create method
             try:
                 user = user_obj.create(cleaned_body) # pass the cleaned body elements to be saved in the database
-                #print(f"Create method returned: {user}")
-                #print(f"User type: {type(user)}")
                 
                 if not user:
                     # Check if user was actually created in database despite create() returning None
                     db_user = User.query.filter_by(_uid=uid).first()
                     if db_user:
-                        #print(f"User exists in DB but create returned None: {db_user.uid}")
                         return jsonify(db_user.read())  # Return the user anyway
                     else:
                         return {'message': f'Processed {name}, either a format error or User ID {uid} is duplicate'}, 400
                 
-                #print(f"Successfully created user: {user.uid}")
                 # return response, the created user details as a JSON object
                 return jsonify(user.read())
                 
             except Exception as e:
-                #print(f"Error creating user: {e}")
                 return {'message': f'Error creating user: {str(e)}'}, 500
 
         @token_required()
@@ -214,11 +204,12 @@ class UserAPI:
                 # Non-admin can only update themselves
                 user = current_user
                 
+            # DISABLED: GitHub validation not needed for DBS2
             # Accounts are desired to be GitHub accounts, change must be validated 
-            if body.get('uid') and body.get('uid') != user._uid:
-                _, status = GitHubUser().get(body.get('uid'))
-                if status != 200:
-                    return {'message': f'User ID {body.get("uid")} not a valid GitHub account' }, 404
+            # if body.get('uid') and body.get('uid') != user._uid:
+            #     _, status = GitHubUser().get(body.get('uid'))
+            #     if status != 200:
+            #         return {'message': f'User ID {body.get("uid")} not a valid GitHub account' }, 404
             
             # Update the User object to the database using custom update method
             user.update(body)
@@ -323,6 +314,7 @@ class UserAPI:
                 return {'message': f'1 or more sections failed to delete, current {sections} requested {current_user.read_sections()}'}, 404
     
             return {'message': f'Sections {sections} deleted successfully'}, 200
+
     class _Security(Resource):
         def post(self):
             try:
