@@ -285,6 +285,8 @@
 const API_BASE = '/api/dbs2';
 let allPlayers = [];
 let currentEditInventory = [];
+let autoSyncTimer = null;
+let isAutoSyncing = false;
 
 // ============ DATA LOADING ============
 
@@ -666,7 +668,19 @@ function refreshAll() {
 
 document.addEventListener('DOMContentLoaded', () => {
     refreshAll();
-    setInterval(loadLeaderboard, 5000);
+    // Auto-sync admin dashboard with backend (crypto + leaderboard) every 3 seconds.
+    // Uses a simple in-flight guard to prevent overlapping refreshes on slow networks.
+    if (autoSyncTimer) clearInterval(autoSyncTimer);
+    autoSyncTimer = setInterval(async () => {
+        if (isAutoSyncing) return;
+        isAutoSyncing = true;
+        try {
+            await Promise.all([loadStats(), loadLeaderboard(), loadPlayers()]);
+        } finally {
+            isAutoSyncing = false;
+        }
+    }, 3000);
+
     document.getElementById('searchInput').addEventListener('input', renderPlayers);
     document.getElementById('sortSelect').addEventListener('change', loadPlayers);
 });
