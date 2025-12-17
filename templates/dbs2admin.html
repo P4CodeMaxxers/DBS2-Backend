@@ -84,6 +84,14 @@
             <small class="text-muted" id="ashTrailStatus">Loading...</small>
         </div>
         <div class="card-body p-0">
+            <div class="p-2 border-bottom border-secondary d-flex justify-content-between align-items-center">
+                <div class="text-muted small">Leaderboard by book</div>
+                <select class="form-select form-select-sm bg-secondary text-light border-0 w-auto" id="ashTrailBookSelect" onchange="loadAshTrailLeaderboard()">
+                    <option value="defi_grimoire">DeFi Grimoire</option>
+                    <option value="lost_ledger">Lost Ledger</option>
+                    <option value="proof_of_burn">Proof-of-Burn Almanac</option>
+                </select>
+            </div>
             <table class="table table-dark table-striped table-hover mb-0">
                 <thead>
                     <tr>
@@ -210,6 +218,7 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="editAshTrailUID">
+                <input type="hidden" id="editAshTrailKey">
                 <div class="mb-3">
                     <label class="form-label">Current %</label>
                     <input type="text" class="form-control bg-secondary text-light" id="currentAshTrailDisplay" disabled>
@@ -217,6 +226,15 @@
                 <div class="mb-3">
                     <label class="form-label">Set % To</label>
                     <input type="number" class="form-control bg-secondary text-light" id="editAshTrailValue" min="0" max="100" placeholder="0-100">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Book</label>
+                    <select class="form-select bg-secondary text-light border-0" id="editAshTrailBook">
+                        <option value="defi_grimoire">DeFi Grimoire</option>
+                        <option value="lost_ledger">Lost Ledger</option>
+                        <option value="proof_of_burn">Proof-of-Burn Almanac</option>
+                    </select>
+                    <div class="form-text text-muted">This edits the per-book score key (no overall score).</div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Quick Adjust</label>
@@ -229,7 +247,7 @@
                     </div>
                 </div>
                 <div class="alert alert-info mb-0">
-                    This writes to the player's <code>scores.ash_trail</code> field for testing.
+                    This writes to the player's per-book score key: <code>scores.ash_trail_&lt;book_id&gt;</code>.
                 </div>
             </div>
             <div class="modal-footer border-secondary">
@@ -377,7 +395,9 @@ async function loadStats() {
 async function loadAshTrailLeaderboard() {
     try {
         document.getElementById('ashTrailStatus').textContent = 'Refreshing...';
-        const response = await fetch(`${API_BASE}/leaderboard/minigame?game=ash_trail&limit=10`);
+        const book = document.getElementById('ashTrailBookSelect')?.value || 'defi_grimoire';
+        const gameKey = `ash_trail_${book}`;
+        const response = await fetch(`${API_BASE}/leaderboard/minigame?game=${encodeURIComponent(gameKey)}&limit=10`);
         if (!response.ok) throw new Error('Failed');
         const data = await response.json();
 
@@ -400,7 +420,7 @@ async function loadAshTrailLeaderboard() {
                     <td><code>${uid}</code></td>
                     <td><strong class="text-success">${score}%</strong></td>
                     <td>
-                        <button class="btn btn-sm btn-outline-success" onclick="openEditAshTrail('${uid}', '${name}', ${score})">🧪 Edit</button>
+                        <button class="btn btn-sm btn-outline-success" onclick="openEditAshTrail('${uid}', '${name}', ${score}, '${book}')">🧪 Edit</button>
                     </td>
                 </tr>`;
             }).join('');
@@ -767,11 +787,13 @@ async function executeBulkCrypto() {
     }
 }
 
-function openEditAshTrail(uid, name, score) {
+function openEditAshTrail(uid, name, score, book) {
     document.getElementById('editAshTrailUID').value = uid;
     document.getElementById('editAshTrailPlayerName').textContent = name;
     document.getElementById('currentAshTrailDisplay').value = `${Math.max(0, Math.min(100, Math.round(Number(score || 0))))}%`;
     document.getElementById('editAshTrailValue').value = Math.max(0, Math.min(100, parseInt(score) || 0));
+    const bookSel = document.getElementById('editAshTrailBook');
+    if (bookSel) bookSel.value = book || 'defi_grimoire';
     new bootstrap.Modal(document.getElementById('editAshTrailModal')).show();
 }
 
@@ -783,6 +805,8 @@ function quickAdjustAshTrail(amount) {
 async function saveAshTrailScore() {
     const uid = document.getElementById('editAshTrailUID').value;
     const value = Math.max(0, Math.min(100, parseInt(document.getElementById('editAshTrailValue').value) || 0));
+    const book = document.getElementById('editAshTrailBook')?.value || 'defi_grimoire';
+    const scoreKey = `ash_trail_${book}`;
 
     try {
         // Prefer using already-loaded player data so we don't clobber other score keys
@@ -796,7 +820,7 @@ async function saveAshTrailScore() {
             scores = (p && p.scores) ? { ...p.scores } : {};
         }
 
-        scores.ash_trail = value;
+        scores[scoreKey] = value;
 
         const response = await fetch(`${API_BASE}/player/${uid}`, {
             method: 'PUT',
