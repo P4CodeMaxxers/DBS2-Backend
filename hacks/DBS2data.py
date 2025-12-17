@@ -4,7 +4,11 @@ from flask import current_app
 dbs2_data = []
 dbs2_list = [
     {"name": "passwords", "data": [
-        "backendintegration"
+        "ishowgreen",
+        "cryptoking", 
+        "basement",
+        "password",
+        "helloworld"
     ]},
     {"name": "inventory", "data": []},
 ]
@@ -62,7 +66,97 @@ def getDBS2Items():
 
 def getDBS2Item(id):
     items = _read_dbs2_file()
-    return items[id]
+    if 0 <= id < len(items):
+        return items[id]
+    return None
+
+
+def getDBS2ItemByName(name):
+    """Get item by name (e.g., 'passwords')"""
+    items = _read_dbs2_file()
+    for item in items:
+        if item.get('name', '').lower() == name.lower():
+            return item
+    return None
+
+
+def updateDBS2Item(id, data):
+    """Update an item by ID"""
+    items = _read_dbs2_file()
+    if 0 <= id < len(items):
+        # Update fields
+        if 'data' in data:
+            items[id]['data'] = data['data']
+        if 'description' in data:
+            items[id]['description'] = data['description']
+        if 'name' in data:
+            items[id]['name'] = data['name']
+        _write_dbs2_file(items)
+        return items[id]
+    return None
+
+
+def updateDBS2ItemByName(name, data):
+    """Update an item by name"""
+    items = _read_dbs2_file()
+    for i, item in enumerate(items):
+        if item.get('name', '').lower() == name.lower():
+            if 'data' in data:
+                items[i]['data'] = data['data']
+            if 'description' in data:
+                items[i]['description'] = data['description']
+            _write_dbs2_file(items)
+            return items[i]
+    return None
+
+
+def getPasswords():
+    """Get the global passwords list (always returns 5)"""
+    DEFAULT_PASSWORDS = ["ishowgreen", "cryptoking", "basement", "password", "helloworld"]
+    
+    item = getDBS2ItemByName('passwords')
+    if item and 'data' in item and len(item['data']) > 0:
+        passwords = item['data']
+        # Ensure we have at least 5 passwords
+        while len(passwords) < 5:
+            # Add defaults that aren't already in the list
+            for dp in DEFAULT_PASSWORDS:
+                if dp not in passwords and len(passwords) < 5:
+                    passwords.append(dp)
+            # If still not enough, add numbered versions
+            if len(passwords) < 5:
+                passwords.append(f"password{len(passwords)}")
+        return passwords[:5]
+    
+    # Initialize with defaults if empty
+    updatePasswords(DEFAULT_PASSWORDS)
+    return DEFAULT_PASSWORDS
+
+
+def updatePasswords(passwords):
+    """Update the global passwords list (max 5)"""
+    # Limit to 5 passwords
+    passwords = passwords[:5] if len(passwords) > 5 else passwords
+    
+    items = _read_dbs2_file()
+    found = False
+    for i, item in enumerate(items):
+        if item.get('name', '').lower() == 'passwords':
+            items[i]['data'] = passwords
+            found = True
+            break
+    
+    if not found:
+        # Create passwords entry if it doesn't exist
+        items.append({
+            "id": len(items),
+            "name": "passwords",
+            "description": "Global passwords for Infinite User minigame",
+            "data": passwords
+        })
+    
+    _write_dbs2_file(items)
+    return passwords
 
 
 def getRandomDBS2Item():
