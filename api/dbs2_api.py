@@ -16,6 +16,7 @@ import requests
 # Import your models and decorators
 from model.dbs2_player import DBS2Player
 from model.user import User
+from model.ashtrail_run import AshTrailRun
 from __init__ import db
 from api.jwt_authorize import token_required
 
@@ -261,6 +262,14 @@ class _MinigameLeaderboardResource(Resource):
         # Use existing model read() output which already includes user_info + scores
         players = DBS2Player.get_all_players()
 
+        # If this is an Ash Trail per-book score key, also attach a ghost `run_id` when available.
+        # game keys look like: ash_trail_defi_grimoire
+        ash_book_id = None
+        if game.startswith('ash_trail_'):
+            candidate = game.replace('ash_trail_', '', 1)
+            if candidate in {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}:
+                ash_book_id = candidate
+
         scored = []
         for p in players:
             scores = p.get('scores') or {}
@@ -279,15 +288,120 @@ class _MinigameLeaderboardResource(Resource):
         scored.sort(key=lambda x: x.get('score', 0), reverse=True)
         scored = scored[:limit]
 
+        # Preload best run ids for these users (only for Ash Trail books).
+        run_id_by_uid = {}
+        if ash_book_id and scored:
+            uids = [e.get('user_info', {}).get('uid') for e in scored if e.get('user_info', {}).get('uid')]
+            if uids:
+                users = User.query.filter(User._uid.in_(uids)).all()
+                uid_to_userid = {u._uid: u.id for u in users if getattr(u, '_uid', None)}
+                user_ids = list(uid_to_userid.values())
+                if user_ids:
+                    runs = (
+                        AshTrailRun.query
+                        .filter(AshTrailRun.book_id == ash_book_id)
+                        .filter(AshTrailRun.user_id.in_(user_ids))
+                        .order_by(AshTrailRun.user_id.asc(), AshTrailRun.score.desc(), AshTrailRun.created_at.desc())
+                        .all()
+                    )
+                    best_by_user = {}
+                    for r in runs:
+                        if r.user_id not in best_by_user:
+                            best_by_user[r.user_id] = r.id
+                    # invert back to uid for frontend payload
+                    for uid, user_id in uid_to_userid.items():
+                        if user_id in best_by_user:
+                            run_id_by_uid[uid] = best_by_user[user_id]
+
         leaderboard = []
         for idx, entry in enumerate(scored):
+            uid = (entry.get('user_info') or {}).get('uid')
             leaderboard.append({
                 'rank': idx + 1,
                 'score': entry.get('score', 0),
-                'user_info': entry.get('user_info', {})
+                'user_info': entry.get('user_info', {}),
+                'run_id': run_id_by_uid.get(uid) if uid else None
             })
 
         return {'game': game, 'leaderboard': leaderboard}, 200
+
+
+class _AshTrailRunsResource(Resource):
+    """
+    Ash Trail ghost runs (replay traces) for a specific book.
+
+    POST /api/dbs2/ash-trail/runs
+      body: { book_id: "defi_grimoire", score: 72, trace: [{x,y}, ...] }
+
+    GET /api/dbs2/ash-trail/runs?book_id=defi_grimoire&limit=10
+      returns top runs by score for that book (no trace)
+    """
+
+    @token_required()
+    def post(self):
+        player = get_current_player()
+        if not player:
+            return {'error': 'Not authenticated'}, 401
+
+        data = request.get_json() or {}
+        book_id = (data.get('book_id') or '').strip()
+        score = data.get('score', 0)
+        trace = data.get('trace', [])
+
+        allowed = {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}
+        if book_id not in allowed:
+            return {'error': 'Invalid book_id'}, 400
+
+        try:
+            score_f = float(score)
+        except Exception:
+            score_f = 0.0
+        score_f = max(0.0, min(100.0, score_f))
+
+        # Minimal validation + size cap (prevent huge payloads)
+        if not isinstance(trace, list):
+            return {'error': 'trace must be a list'}, 400
+        if len(trace) > 2500:
+            trace = trace[:2500]
+
+        # Store the run
+        run = AshTrailRun(user_id=g.current_user.id, book_id=book_id, score=score_f)
+        run.trace = trace
+        db.session.add(run)
+        db.session.commit()
+
+        return {'run': run.read(include_trace=False)}, 201
+
+    def get(self):
+        book_id = (request.args.get('book_id') or '').strip()
+        allowed = {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}
+        if book_id not in allowed:
+            return {'error': 'book_id query param required (defi_grimoire|lost_ledger|proof_of_burn)'}, 400
+
+        limit = min(int(request.args.get('limit', 10)), 50)
+
+        runs = (
+            AshTrailRun.query
+            .filter_by(book_id=book_id)
+            .order_by(AshTrailRun.score.desc(), AshTrailRun.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+        return {'book_id': book_id, 'runs': [r.read(include_trace=False) for r in runs]}, 200
+
+
+class _AshTrailRunDetailResource(Resource):
+    """
+    GET /api/dbs2/ash-trail/runs/<id>
+      returns run + trace for replay
+    """
+
+    def get(self, run_id: int):
+        run = AshTrailRun.query.get(run_id)
+        if not run:
+            return {'error': 'Run not found'}, 404
+        return {'run': run.read(include_trace=True)}, 200
 
 
 class _BitcoinBoostResource(Resource):
@@ -643,6 +757,8 @@ api.add_resource(_MinigamesResource, '/minigames')
 # Public endpoints
 api.add_resource(_LeaderboardResource, '/leaderboard')
 api.add_resource(_MinigameLeaderboardResource, '/leaderboard/minigame')
+api.add_resource(_AshTrailRunsResource, '/ash-trail/runs')
+api.add_resource(_AshTrailRunDetailResource, '/ash-trail/runs/<int:run_id>')
 api.add_resource(_BitcoinBoostResource, '/bitcoin-boost')
 
 # Admin endpoints (full featured)
