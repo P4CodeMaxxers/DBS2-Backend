@@ -17,6 +17,7 @@ import requests
 from model.dbs2_player import DBS2Player
 from model.user import User
 from model.ashtrail_run import AshTrailRun
+from model.ashtrail_run import AshTrailRun
 from __init__ import db
 from api.jwt_authorize import token_required
 
@@ -270,6 +271,14 @@ class _MinigameLeaderboardResource(Resource):
             if candidate in {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}:
                 ash_book_id = candidate
 
+        # If this is an Ash Trail per-book score key, also attach a ghost `run_id` when available.
+        # game keys look like: ash_trail_defi_grimoire
+        ash_book_id = None
+        if game.startswith('ash_trail_'):
+            candidate = game.replace('ash_trail_', '', 1)
+            if candidate in {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}:
+                ash_book_id = candidate
+
         scored = []
         for p in players:
             scores = p.get('scores') or {}
@@ -313,12 +322,40 @@ class _MinigameLeaderboardResource(Resource):
                         if user_id in best_by_user:
                             run_id_by_uid[uid] = best_by_user[user_id]
 
+        # Preload best run ids for these users (only for Ash Trail books).
+        run_id_by_uid = {}
+        if ash_book_id and scored:
+            uids = [e.get('user_info', {}).get('uid') for e in scored if e.get('user_info', {}).get('uid')]
+            if uids:
+                users = User.query.filter(User._uid.in_(uids)).all()
+                uid_to_userid = {u._uid: u.id for u in users if getattr(u, '_uid', None)}
+                user_ids = list(uid_to_userid.values())
+                if user_ids:
+                    runs = (
+                        AshTrailRun.query
+                        .filter(AshTrailRun.book_id == ash_book_id)
+                        .filter(AshTrailRun.user_id.in_(user_ids))
+                        .order_by(AshTrailRun.user_id.asc(), AshTrailRun.score.desc(), AshTrailRun.created_at.desc())
+                        .all()
+                    )
+                    best_by_user = {}
+                    for r in runs:
+                        if r.user_id not in best_by_user:
+                            best_by_user[r.user_id] = r.id
+                    # invert back to uid for frontend payload
+                    for uid, user_id in uid_to_userid.items():
+                        if user_id in best_by_user:
+                            run_id_by_uid[uid] = best_by_user[user_id]
+
         leaderboard = []
         for idx, entry in enumerate(scored):
+            uid = (entry.get('user_info') or {}).get('uid')
             uid = (entry.get('user_info') or {}).get('uid')
             leaderboard.append({
                 'rank': idx + 1,
                 'score': entry.get('score', 0),
+                'user_info': entry.get('user_info', {}),
+                'run_id': run_id_by_uid.get(uid) if uid else None
                 'user_info': entry.get('user_info', {}),
                 'run_id': run_id_by_uid.get(uid) if uid else None
             })
@@ -403,116 +440,6 @@ class _AshTrailRunDetailResource(Resource):
             return {'error': 'Run not found'}, 404
         return {'run': run.read(include_trace=True)}, 200
 
-
-class _AshTrailAIResource(Resource):
-    """
-    Simple backend-generated (AI-like) narrative for Ash Trail.
-
-    POST /api/dbs2/ash-trail/ai
-      body: { book_id: "defi_grimoire", score: 72, trail_stats: {...} }
-
-    Returns:
-      {
-        "tone": "error|warn|good|great",
-        "speaker": "IShowGreen",
-        "dialogue": "...",
-        "page_title": "...",
-        "page_text": "..."
-      }
-    """
-
-    def post(self):
-        data = request.get_json() or {}
-        book_id = (data.get('book_id') or '').strip()
-        score = data.get('score', 0)
-        try:
-            s = float(score)
-        except Exception:
-            s = 0.0
-        s = max(0.0, min(100.0, s))
-
-        books = {
-            'defi_grimoire': {
-                'title': 'DeFi Grimoire',
-                'topic': 'decentralized finance',
-                'keywords': ['liquidity', 'swap', 'pool', 'yield', 'gas', 'vault', 'oracle'],
-            },
-            'lost_ledger': {
-                'title': 'Lost Ledger',
-                'topic': 'accounting the chain',
-                'keywords': ['blocks', 'entries', 'balance', 'hash', 'confirmations', 'ledger'],
-            },
-            'proof_of_burn': {
-                'title': 'Proof-of-Burn Almanac',
-                'topic': 'proof-of-burn',
-                'keywords': ['burn', 'supply', 'address', 'scarcity', 'verification', 'signal'],
-            },
-        }
-        meta = books.get(book_id) or {'title': 'Burnt Book', 'topic': 'memory', 'keywords': ['ash', 'ink', 'pages']}
-
-        # Score bands: <40 nonsense, 40-60 partial, 60-80 mostly coherent, 80-100 clean
-        if s < 40:
-            tone = 'error'
-            dialogue = (
-                'IShowGreen squints: "This reads like a toaster arguing with a spreadsheet. '
-                'You brought me ash, not information."'
-            )
-            page_title = f"{meta['title']} — Fragment (Corrupted)"
-            page_text = (
-                "…liquidity = bananas??\n"
-                "swap the *stairs* into a pool\n"
-                "gas fee: paid in whispers\n"
-                "NOTE: DO NOT ORACLE THE SPOON\n"
-                "…end of page (burnt through)"
-            )
-        elif s < 60:
-            tone = 'warn'
-            dialogue = (
-                'IShowGreen mutters: "Some of this is real… and some of it is smoke. '
-                'You’re close, but details are missing."'
-            )
-            page_title = f"{meta['title']} — Partial Recovery"
-            page_text = (
-                f"The page mentions {meta['topic']} and a {meta['keywords'][0]} pool,\n"
-                f"but the steps jump around and the {meta['keywords'][1]} rule is incomplete.\n"
-                "Several lines are smeared into black dust."
-            )
-        elif s < 80:
-            tone = 'good'
-            dialogue = (
-                'IShowGreen nods: "This mostly tracks. A few gaps, but I can reconstruct the rest. '
-                'Run it again if you want it perfect."'
-            )
-            page_title = f"{meta['title']} — Mostly Restored"
-            page_text = (
-                f"Key idea: {meta['topic']} works when participants provide {meta['keywords'][0]}.\n"
-                f"Rule of thumb: verify inputs (watch the {meta['keywords'][5] if len(meta['keywords'])>5 else meta['keywords'][2]}),\n"
-                "then execute the swap/step sequence in order.\n"
-                "One margin note is still burnt."
-            )
-        else:
-            tone = 'great'
-            dialogue = (
-                'IShowGreen smiles: "Perfect. Clean sequence, clean logic. '
-                'I can finally read this without guessing."'
-            )
-            page_title = f"{meta['title']} — Fully Restored"
-            page_text = (
-                f"Recovered summary of {meta['topic']}:\n"
-                f"- Provide {meta['keywords'][0]} to a pool\n"
-                f"- Validate via {meta['keywords'][6] if len(meta['keywords'])>6 else meta['keywords'][2]}\n"
-                f"- Execute swap with predictable {meta['keywords'][4] if len(meta['keywords'])>4 else 'fees'}\n"
-                "- Record results and verify confirmations\n"
-                "\nNo burn marks remain on this page."
-            )
-
-        return {
-            'tone': tone,
-            'speaker': 'IShowGreen',
-            'dialogue': dialogue,
-            'page_title': page_title,
-            'page_text': page_text,
-        }, 200
 
 class _BitcoinBoostResource(Resource):
     """Get Bitcoin price data for crypto miner minigame"""
@@ -869,7 +796,6 @@ api.add_resource(_LeaderboardResource, '/leaderboard')
 api.add_resource(_MinigameLeaderboardResource, '/leaderboard/minigame')
 api.add_resource(_AshTrailRunsResource, '/ash-trail/runs')
 api.add_resource(_AshTrailRunDetailResource, '/ash-trail/runs/<int:run_id>')
-api.add_resource(_AshTrailAIResource, '/ash-trail/ai')
 api.add_resource(_BitcoinBoostResource, '/bitcoin-boost')
 
 # Admin endpoints (full featured)
