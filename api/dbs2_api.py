@@ -236,6 +236,60 @@ class _LeaderboardResource(Resource):
         return {'leaderboard': leaderboard}, 200
 
 
+class _MinigameLeaderboardResource(Resource):
+    """
+    Public minigame leaderboard.
+
+    GET /api/dbs2/leaderboard/minigame?game=ash_trail&limit=10
+
+    Returns:
+      {
+        "game": "ash_trail",
+        "leaderboard": [
+          { "rank": 1, "score": 97, "user_info": { "uid": "...", "name": "..." } }
+        ]
+      }
+    """
+
+    def get(self):
+        game = (request.args.get('game') or '').strip()
+        if not game:
+            return {'error': 'game query param required'}, 400
+
+        limit = min(int(request.args.get('limit', 10)), 100)
+
+        # Use existing model read() output which already includes user_info + scores
+        players = DBS2Player.get_all_players()
+
+        scored = []
+        for p in players:
+            scores = p.get('scores') or {}
+            raw_score = scores.get(game, None)
+            if raw_score is None:
+                continue
+            try:
+                score = float(raw_score)
+            except Exception:
+                continue
+            scored.append({
+                'user_info': p.get('user_info', {}),
+                'score': score
+            })
+
+        scored.sort(key=lambda x: x.get('score', 0), reverse=True)
+        scored = scored[:limit]
+
+        leaderboard = []
+        for idx, entry in enumerate(scored):
+            leaderboard.append({
+                'rank': idx + 1,
+                'score': entry.get('score', 0),
+                'user_info': entry.get('user_info', {})
+            })
+
+        return {'game': game, 'leaderboard': leaderboard}, 200
+
+
 class _BitcoinBoostResource(Resource):
     """Get Bitcoin price data for crypto miner minigame"""
     
@@ -588,6 +642,7 @@ api.add_resource(_MinigamesResource, '/minigames')
 
 # Public endpoints
 api.add_resource(_LeaderboardResource, '/leaderboard')
+api.add_resource(_MinigameLeaderboardResource, '/leaderboard/minigame')
 api.add_resource(_BitcoinBoostResource, '/bitcoin-boost')
 
 # Admin endpoints (full featured)
