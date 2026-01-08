@@ -24,7 +24,9 @@ class JavaScriptExec(Resource):
                     ["node", tmp.name],
                     capture_output=True,
                     text=True,
-                    timeout=5
+                    timeout=5,
+                    cwd="/tmp",  # Force working directory to /tmp
+                    env={"HOME": "/tmp", "PATH": "/usr/bin:/usr/local/bin"}  # Restricted environment
                 )
                 output = result.stdout + result.stderr
             except subprocess.TimeoutExpired:
