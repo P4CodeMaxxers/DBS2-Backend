@@ -20,7 +20,7 @@ This guide covers **two testing approaches**:
 └─────────────────────────────────────────────────────────────────┘
                               ↓ HTTP requests with JWT cookie
 ┌─────────────────────────────────────────────────────────────────┐
-│  BACKEND (Flask - localhost:8587 or production URL)             │
+│  BACKEND (Flask - localhost:8403 or production URL)             │
 │  ├── /api/authenticate → Returns JWT token as cookie           │
 │  ├── /api/dbs2/* → All game data endpoints                     │
 │  └── Database → Stores player crypto, inventory, scores        │
@@ -38,7 +38,7 @@ cd your-backend-repo
 # OR
 python main.py
 ```
-Backend should be running on `http://localhost:8587`
+Backend should be running on `http://localhost:8403`
 
 ### Step 2: Start Frontend Server
 ```bash
@@ -217,7 +217,7 @@ CORS(app, supports_credentials=True, origins=["http://localhost:4100"])
 
 ## Verification Checklist
 
-- [ ] Backend running on port 8587
+- [ ] Backend running on port 8403
 - [ ] Frontend running on port 4100  
 - [ ] Can login at /login page
 - [ ] `await DBS2API.getPlayer()` returns data
@@ -235,7 +235,7 @@ Use Postman to test backend endpoints **independently** of the frontend. This ve
 
 ### Base URL
 ```
-http://localhost:8587
+http://localhost:8403
 ```
 
 ### Required Headers (for all requests)
@@ -249,7 +249,7 @@ http://localhost:8587
 
 **Request:**
 ```
-POST http://localhost:8587/api/authenticate
+POST http://localhost:8403/api/authenticate
 ```
 
 **Body (raw JSON):**
@@ -287,7 +287,7 @@ Postman automatically saves this cookie and sends it with future requests to the
 
 **Request:**
 ```
-GET http://localhost:8587/api/dbs2/player
+GET http://localhost:8403/api/dbs2/player
 ```
 
 **Expected Response (200 OK):**
@@ -318,7 +318,7 @@ GET http://localhost:8587/api/dbs2/player
 
 ### Get Crypto Balance
 ```
-GET http://localhost:8587/api/dbs2/crypto
+GET http://localhost:8403/api/dbs2/crypto
 ```
 
 **Response:**
@@ -330,7 +330,7 @@ GET http://localhost:8587/api/dbs2/crypto
 
 ### Add Crypto
 ```
-PUT http://localhost:8587/api/dbs2/crypto
+PUT http://localhost:8403/api/dbs2/crypto
 ```
 
 **Body:**
@@ -350,7 +350,7 @@ PUT http://localhost:8587/api/dbs2/crypto
 
 ### Set Crypto to Specific Amount
 ```
-PUT http://localhost:8587/api/dbs2/crypto
+PUT http://localhost:8403/api/dbs2/crypto
 ```
 
 **Body:**
@@ -374,7 +374,7 @@ PUT http://localhost:8587/api/dbs2/crypto
 
 ### Get Minigame Status
 ```
-GET http://localhost:8587/api/dbs2/minigames
+GET http://localhost:8403/api/dbs2/minigames
 ```
 
 **Response:**
@@ -391,7 +391,7 @@ GET http://localhost:8587/api/dbs2/minigames
 
 ### Mark Minigame Complete
 ```
-PUT http://localhost:8587/api/dbs2/minigames
+PUT http://localhost:8403/api/dbs2/minigames
 ```
 
 **Body:**
@@ -420,7 +420,7 @@ PUT http://localhost:8587/api/dbs2/minigames
 
 ### Get Inventory
 ```
-GET http://localhost:8587/api/dbs2/inventory
+GET http://localhost:8403/api/dbs2/inventory
 ```
 
 **Response:**
@@ -432,7 +432,7 @@ GET http://localhost:8587/api/dbs2/inventory
 
 ### Add Item
 ```
-POST http://localhost:8587/api/dbs2/inventory
+POST http://localhost:8403/api/dbs2/inventory
 ```
 
 **Body:**
@@ -455,7 +455,7 @@ POST http://localhost:8587/api/dbs2/inventory
 
 ### Remove Item
 ```
-DELETE http://localhost:8587/api/dbs2/inventory
+DELETE http://localhost:8403/api/dbs2/inventory
 ```
 
 **Body:**
@@ -471,7 +471,7 @@ DELETE http://localhost:8587/api/dbs2/inventory
 
 ### Get Scores
 ```
-GET http://localhost:8587/api/dbs2/scores
+GET http://localhost:8403/api/dbs2/scores
 ```
 
 **Response:**
@@ -483,7 +483,7 @@ GET http://localhost:8587/api/dbs2/scores
 
 ### Submit Score
 ```
-PUT http://localhost:8587/api/dbs2/scores
+PUT http://localhost:8403/api/dbs2/scores
 ```
 
 **Body:**
@@ -510,7 +510,7 @@ PUT http://localhost:8587/api/dbs2/scores
 
 ### Leaderboard
 ```
-GET http://localhost:8587/api/dbs2/leaderboard?limit=5
+GET http://localhost:8403/api/dbs2/leaderboard?limit=5
 ```
 
 **Response:**
@@ -528,7 +528,7 @@ GET http://localhost:8587/api/dbs2/leaderboard?limit=5
 
 ### Bitcoin Boost
 ```
-GET http://localhost:8587/api/dbs2/bitcoin-boost
+GET http://localhost:8403/api/dbs2/bitcoin-boost
 ```
 
 **Response:**
@@ -571,7 +571,7 @@ GET http://localhost:8587/api/dbs2/bitcoin-boost
 ### Backend Not Responding
 ```bash
 # Check if Flask is running
-curl http://localhost:8587/api/dbs2/leaderboard
+curl http://localhost:8403/api/dbs2/leaderboard
 
 # Should return JSON, not HTML or error
 ```
@@ -594,7 +594,7 @@ CORS(app, supports_credentials=True, origins=["http://localhost:4100"])
 ### Database Issues
 ```bash
 # Reset test user's data via admin panel
-# Go to: http://localhost:8587/api/dbs2/admin
+# Go to: http://localhost:8403/api/dbs2/admin
 # Or use Postman to set crypto to 0:
 PUT /api/dbs2/crypto
 {"crypto": 0}
