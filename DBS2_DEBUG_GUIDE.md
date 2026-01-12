@@ -217,7 +217,7 @@ CORS(app, supports_credentials=True, origins=["http://localhost:4100"])
 
 ## Verification Checklist
 
-- [ ] Backend running on port 8587
+- [ ] Backend running on port 8403
 - [ ] Frontend running on port 4100  
 - [ ] Can login at /login page
 - [ ] `await DBS2API.getPlayer()` returns data
@@ -235,7 +235,7 @@ Use Postman to test backend endpoints **independently** of the frontend. This ve
 
 ### Base URL
 ```
-http://localhost:8587
+http://localhost:8403
 ```
 
 ### Required Headers (for all requests)
@@ -249,7 +249,7 @@ http://localhost:8587
 
 **Request:**
 ```
-POST http://localhost:8587/api/authenticate
+POST http://localhost:8403/api/authenticate
 ```
 
 **Body (raw JSON):**
@@ -287,7 +287,7 @@ Postman automatically saves this cookie and sends it with future requests to the
 
 **Request:**
 ```
-GET http://localhost:8587/api/dbs2/player
+GET http://localhost:8403/api/dbs2/player
 ```
 
 **Expected Response (200 OK):**
@@ -318,7 +318,7 @@ GET http://localhost:8587/api/dbs2/player
 
 ### Get Crypto Balance
 ```
-GET http://localhost:8587/api/dbs2/crypto
+GET http://localhost:8403/api/dbs2/crypto
 ```
 
 **Response:**
@@ -330,7 +330,7 @@ GET http://localhost:8587/api/dbs2/crypto
 
 ### Add Crypto
 ```
-PUT http://localhost:8587/api/dbs2/crypto
+PUT http://localhost:8403/api/dbs2/crypto
 ```
 
 **Body:**
@@ -350,115 +350,48 @@ PUT http://localhost:8587/api/dbs2/crypto
 
 ### Set Crypto to Specific Amount
 ```
-PUT http://localhost:8587/api/dbs2/crypto
+PUT http://localhost:8403/api/dbs2/crypto
 ```
 
-**Response:**
+**Body:**
 ```json
-{
-    "crypto": 100
-}
-```
-
-### Add Crypto
-```
-Method: PUT
-URL: http://localhost:8887/api/dbs2/crypto
-Headers: Content-Type: application/json
-Body (raw JSON):
-{
-    "crypto_miner": true
-}
-```
-
-**Response:**
-```json
-{
-    "crypto": 1350
-}
-```
-
-### PUT - Set Crypto to Specific Value
-```
-Method: PUT
-URL: http://localhost:8887/api/dbs2/crypto
-Headers: Content-Type: application/json
-Body (raw JSON):
 {
     "crypto": 200
 }
 ```
 
----
-
-## Step 5: Test Inventory
-
-### Get Inventory
-```
-GET http://localhost:8587/api/dbs2/inventory
-```
-
 **Response:**
 ```json
 {
-    "inventory": []
-}
-```
-
-### Add Item
-```
-POST http://localhost:8587/api/dbs2/inventory
-```
-
-**Body:**
-```json
-{
-    "name": "Golden Key",
-    "found_at": "basement_chest"
-}
-```
-
-**Response:**
-```json
-{
-    "message": "Item added",
-    "inventory": [
-        {"name": "Golden Key", "found_at": "basement_chest"}
-    ]
-}
-```
-
-### Remove Item
-```
-DELETE http://localhost:8587/api/dbs2/inventory
-```
-
-**Body:**
-```json
-{
-    "index": 0
+    "crypto": 200,
+    "message": "Crypto set to 200"
 }
 ```
 
 ---
 
-## Step 6: Test Scores
+## Step 4: Test Minigame Completion
 
-### Get Scores
+### Get Minigame Status
 ```
-GET http://localhost:8587/api/dbs2/scores
+GET http://localhost:8403/api/dbs2/minigames
 ```
 
 **Response:**
 ```json
 {
-    "scores": {}
+    "crypto_miner": false,
+    "infinite_user": false,
+    "laundry": false,
+    "ash_trail": false,
+    "completed_count": 0,
+    "total_minigames": 4
 }
 ```
 
-### Submit Score
+### Mark Minigame Complete
 ```
-PUT http://localhost:8587/api/dbs2/scores
+PUT http://localhost:8403/api/dbs2/minigames
 ```
 
 **Body:**
@@ -481,250 +414,95 @@ PUT http://localhost:8587/api/dbs2/scores
 }
 ```
 
-### GET Minigame Completion Status
+---
+
+## Step 5: Test Inventory
+
+### Get Inventory
 ```
-Method: GET
-URL: http://localhost:8887/api/dbs2/minigames
+GET http://localhost:8403/api/dbs2/inventory
 ```
 
-### PUT - Mark Minigame Complete
-```
-Method: PUT
-URL: http://localhost:8887/api/dbs2/minigames
-Headers: Content-Type: application/json
-Body (raw JSON):
+**Response:**
+```json
 {
-    "laundry": true
+    "inventory": []
 }
 ```
 
-### GET Leaderboard (No Login Required!)
+### Add Item
 ```
-Method: GET
-URL: http://localhost:8887/api/dbs2/leaderboard?limit=10
+POST http://localhost:8403/api/dbs2/inventory
 ```
 
-## 4.3 Testing Error Cases
-
-Good testing means also checking what happens when things go wrong!
-
-### Test: Not Logged In
-1. Click `Cookies` → Delete the session cookie
-2. Try `GET http://localhost:8887/api/dbs2/player`
-3. **Expected:** Redirect to login page (302) or error
-
-### Test: Invalid Data
-```
-Method: POST
-URL: http://localhost:8887/api/dbs2/inventory
-Body (raw JSON):
+**Body:**
+```json
 {
-    "boost_multiplier": 1.25,
-    "btc_price_usd": 45000.50,
-    "btc_change_24h": 5.2,
-    "message": "Bitcoin is up! 1.25x crypto boost active!"
+    "name": "Golden Key",
+    "found_at": "basement_chest"
+}
+```
+
+**Response:**
+```json
+{
+    "message": "Item added",
+    "inventory": [
+        {"name": "Golden Key", "found_at": "basement_chest"}
+    ]
+}
+```
+
+### Remove Item
+```
+DELETE http://localhost:8403/api/dbs2/inventory
+```
+
+**Body:**
+```json
+{
+    "index": 0
 }
 ```
 
 ---
 
-## Postman Collection Setup
+## Step 6: Test Scores
 
-### Create a Collection
-1. Click "New" → "Collection"
-2. Name it "DBS2 API"
-
-### Add Requests in Order:
-1. `POST /api/authenticate` - Run this FIRST
-2. `GET /api/dbs2/player`
-3. `GET /api/dbs2/crypto`
-4. `PUT /api/dbs2/crypto` (add)
-5. `GET /api/dbs2/minigames`
-6. `PUT /api/dbs2/minigames`
-7. `GET /api/dbs2/leaderboard`
-8. `GET /api/dbs2/bitcoin-boost`
-
-### Postman Tips:
-- **Cookies are automatic**: After authenticating, Postman stores the JWT cookie
-- **Check Cookies tab**: Click "Cookies" under the Send button to see stored cookies
-- **Clear cookies to test auth**: Delete cookies to simulate logged-out state
-
----
-
-## Debugging Checklist
-
-### Backend Not Responding
-```bash
-# Check if Flask is running
-curl http://localhost:8587/api/dbs2/leaderboard
-
-# Should return JSON, not HTML or error
+### Get Scores
+```
+GET http://localhost:8403/api/dbs2/scores
 ```
 
-### Authentication Issues
-```bash
-# In Postman, after POST /api/authenticate:
-# 1. Check response status is 200
-# 2. Check Cookies tab shows jwt_token_flask
-# 3. Try GET /api/dbs2/player immediately after
+**Response:**
+```json
+{
+    "scores": {}
+}
 ```
 
-### CORS Issues (Frontend only)
-If frontend gets CORS errors but Postman works:
-```python
-# Check backend has:
-CORS(app, supports_credentials=True, origins=["http://localhost:4100"])
+### Submit Score
+```
+PUT http://localhost:8403/api/dbs2/scores
 ```
 
-### Database Issues
-```bash
-# Reset test user's data via admin panel
-# Go to: http://localhost:8587/api/dbs2/admin
-# Or use Postman to set crypto to 0:
-PUT /api/dbs2/crypto
-{"crypto": 0}
+**Body:**
+```json
+{
+    "game": "crypto_miner",
+    "score": 150
+}
 ```
 
----
-
-## Complete Test Sequence
-
-### Postman Full Test:
-1. ✅ `POST /api/authenticate` → 200 + cookie set
-2. ✅ `GET /api/dbs2/player` → Returns user data
-3. ✅ `PUT /api/dbs2/crypto` `{"add": 100}` → Crypto increases
-4. ✅ `GET /api/dbs2/crypto` → Shows new balance
-5. ✅ `PUT /api/dbs2/minigames` `{"crypto_miner": true}` → Marked complete
-6. ✅ `GET /api/dbs2/leaderboard` → Shows updated data
-7. ✅ `GET /api/dbs2/bitcoin-boost` → Returns multiplier
-
-### Frontend Full Test:
-1. ✅ Login at `/login` page
-2. ✅ Navigate to game
-3. ✅ `await DBS2API.getPlayer()` in console → Returns data
-4. ✅ Play Crypto Miner → Bitcoin boost visible
-5. ✅ Complete minigame → Crypto awarded
-6. ✅ Check leaderboard updated
-
----
-
-# PART 3: HTTP Status Codes Reference
-
-| Code | Name | What It Means | How to Fix |
-|------|------|---------------|------------|
-| 200 | OK | Success! | Nothing to fix |
-| 201 | Created | Resource created successfully | Nothing to fix |
-| 302 | Redirect | Not logged in, redirecting to login | Authenticate first |
-| 400 | Bad Request | Invalid JSON or missing required fields | Check request body format |
-| 401 | Unauthorized | Not logged in or token expired | Re-authenticate |
-| 403 | Forbidden | Logged in but not allowed to access | Check permissions |
-| 404 | Not Found | URL doesn't exist | Check endpoint URL |
-| 405 | Method Not Allowed | Wrong HTTP method (GET vs POST) | Check method type |
-| 500 | Internal Server Error | Python crashed | Check backend terminal for error |
-
----
-
-# PART 4: How Cookies/JWT Work
-
+**Response:**
+```json
+{
+    "message": "Score updated",
+    "game": "crypto_miner",
+    "score": 150,
+    "is_high_score": true
+}
 ```
-1. POST /api/authenticate with username/password
-              ↓
-2. Server validates credentials
-              ↓
-3. Server creates JWT token
-              ↓
-4. Server sends "Set-Cookie: jwt_token_flask=eyJ..." header
-              ↓
-5. Browser/Postman stores cookie automatically
-              ↓
-6. All future requests include "Cookie: jwt_token_flask=eyJ..."
-              ↓
-7. Server reads cookie, decodes JWT, identifies user
-```
-
-### Cookie Problems:
-| Problem | Symptom | Fix |
-|---------|---------|-----|
-| No cookie | 302 redirect or 401 | Login again |
-| Expired cookie | 401 Unauthorized | Login again |
-| Wrong domain | Cookie not sent | Check URL matches |
-| Blocked by browser | Cookie not saved | Check browser settings |
-
-### JavaScript Must Include:
-```javascript
-fetch(url, { credentials: 'include' })  // This tells browser to send cookies!
-```
-Without this, the browser won't send your login cookie, and the server won't know who you are.
-
----
-
-## Error: "Not logged in" or Redirect to Login
-
-**Cause:** Session cookie is missing or expired
-
-**Fixes:**
-- Postman: Re-do the login request
-- Browser: Go to `/login` and login again
-- Check: Make sure cookies aren't blocked in browser
-
-## Error: 404 Not Found
-
-**Cause:** Wrong URL or server not running
-
-**Fixes:**
-- Check URL spelling exactly
-- Make sure server is running (`python main.py`)
-- Check the port number (8887 or your config)
-
-## Error: 500 Internal Server Error
-
-**Cause:** Something broke on the server
-
-**Fixes:**
-- Check your terminal - Python shows the error there!
-- Common causes:
-  - Database doesn't exist → delete .db file and restart
-  - Missing import → check main.py imports
-  - Syntax error in Python code
-
-## Error: "No data provided" or "Item name required"
-
-**Cause:** You sent the request without proper JSON body
-
-**Fixes:**
-- Make sure you selected `raw` and `JSON` in Postman
-- Check your JSON syntax (needs double quotes!)
-- Add the `Content-Type: application/json` header
-
-## Error: CORS Error (in browser)
-
-**Cause:** Browser blocking cross-origin request
-
-**Fix:** This shouldn't happen if frontend and backend are same origin. If it does, you might be accessing wrong URL.
-
-## Data Not Saving
-
-**Causes & Fixes:**
-1. Not logged in → Login first
-2. Database locked → Restart server
-3. Wrong method → Use PUT not GET for updates
-
-## How to Debug Like a Pro
-
-1. **Check Terminal:** Python errors show here
-2. **Check Network Tab:** See exactly what was sent/received
-3. **Check Console:** JavaScript errors show here
-4. **Add print statements:** In Python, add `print(data)` to see what's happening
-5. **Check Database Directly:**
-   ```python
-   # In Python shell
-   from main import app, db
-   from model.dbs2_player import DBS2Player
-   with app.app_context():
-       players = DBS2Player.query.all()
-       for p in players:
-           print(p.read())
-   ```
 
 ---
 

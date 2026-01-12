@@ -27,7 +27,6 @@ from api.microblog_api import microblog_api
 from api.classroom_api import classroom_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from hacks.DBS2endpoint import DBS2_api  # Import the Discord Basement Simulator 2 API blueprint
-from hacks.DBS2endpoint import DBS2_api  # Import the Discord Basement Simulator 2 API blueprint
 from api.post import post_api  # Import the social media post API
 from api.dbs2_api import dbs2_api
 from model.dbs2_player import DBS2Player, initDBS2Players

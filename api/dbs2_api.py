@@ -17,7 +17,6 @@ import requests
 from model.dbs2_player import DBS2Player
 from model.user import User
 from model.ashtrail_run import AshTrailRun
-from model.ashtrail_run import AshTrailRun
 from __init__ import db
 from api.jwt_authorize import token_required
 
@@ -271,14 +270,6 @@ class _MinigameLeaderboardResource(Resource):
             if candidate in {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}:
                 ash_book_id = candidate
 
-        # If this is an Ash Trail per-book score key, also attach a ghost `run_id` when available.
-        # game keys look like: ash_trail_defi_grimoire
-        ash_book_id = None
-        if game.startswith('ash_trail_'):
-            candidate = game.replace('ash_trail_', '', 1)
-            if candidate in {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}:
-                ash_book_id = candidate
-
         scored = []
         for p in players:
             scores = p.get('scores') or {}
@@ -322,40 +313,12 @@ class _MinigameLeaderboardResource(Resource):
                         if user_id in best_by_user:
                             run_id_by_uid[uid] = best_by_user[user_id]
 
-        # Preload best run ids for these users (only for Ash Trail books).
-        run_id_by_uid = {}
-        if ash_book_id and scored:
-            uids = [e.get('user_info', {}).get('uid') for e in scored if e.get('user_info', {}).get('uid')]
-            if uids:
-                users = User.query.filter(User._uid.in_(uids)).all()
-                uid_to_userid = {u._uid: u.id for u in users if getattr(u, '_uid', None)}
-                user_ids = list(uid_to_userid.values())
-                if user_ids:
-                    runs = (
-                        AshTrailRun.query
-                        .filter(AshTrailRun.book_id == ash_book_id)
-                        .filter(AshTrailRun.user_id.in_(user_ids))
-                        .order_by(AshTrailRun.user_id.asc(), AshTrailRun.score.desc(), AshTrailRun.created_at.desc())
-                        .all()
-                    )
-                    best_by_user = {}
-                    for r in runs:
-                        if r.user_id not in best_by_user:
-                            best_by_user[r.user_id] = r.id
-                    # invert back to uid for frontend payload
-                    for uid, user_id in uid_to_userid.items():
-                        if user_id in best_by_user:
-                            run_id_by_uid[uid] = best_by_user[user_id]
-
         leaderboard = []
         for idx, entry in enumerate(scored):
-            uid = (entry.get('user_info') or {}).get('uid')
             uid = (entry.get('user_info') or {}).get('uid')
             leaderboard.append({
                 'rank': idx + 1,
                 'score': entry.get('score', 0),
-                'user_info': entry.get('user_info', {}),
-                'run_id': run_id_by_uid.get(uid) if uid else None
                 'user_info': entry.get('user_info', {}),
                 'run_id': run_id_by_uid.get(uid) if uid else None
             })
