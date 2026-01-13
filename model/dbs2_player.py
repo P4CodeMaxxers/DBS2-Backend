@@ -1,194 +1,141 @@
-# model/dbs2_player.py
-# Updated DBS2 Player model with multi-coin wallet support
+"""
+DBS2 Player Model - Original structure with multi-coin wallet support
+Place this in: model/dbs2_player.py
+"""
 
-from sqlite3 import IntegrityError
 from __init__ import app, db
+from model.user import User
 import json
+from datetime import datetime
 
-# Supported cryptocurrencies
-SUPPORTED_COINS = ['bitcoin', 'ethereum', 'solana', 'cardano', 'dogecoin']
 
 class DBS2Player(db.Model):
     """
-    DBS2 Player model with wallet supporting multiple cryptocurrencies.
-    
-    Wallet structure:
-    {
-        "satoshis": 0,       # Main score currency (1 BTC = 100,000,000 satoshis)
-        "bitcoin": 0.0,      # BTC balance
-        "ethereum": 0.0,     # ETH balance
-        "solana": 0.0,       # SOL balance
-        "cardano": 0.0,      # ADA balance
-        "dogecoin": 0.0      # DOGE balance
-    }
+    DBS2 Player model with:
+    - user_id foreign key to User
+    - Individual completion fields for each minigame
+    - _crypto for main satoshi balance
+    - Multi-coin wallet balances (BTC, ETH, SOL, ADA, DOGE)
+    - JSON fields for inventory and scores
     """
     __tablename__ = 'dbs2_players'
     
+    # Primary key
     id = db.Column(db.Integer, primary_key=True)
-    _uid = db.Column(db.String(255), unique=True, nullable=False)
-    _wallet = db.Column(db.Text, default='{}')
+    
+    # Foreign key to User
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
+    
+    # Main currency (satoshis)
+    _crypto = db.Column(db.Integer, default=0)
+    
+    # Multi-coin wallet balances
+    _wallet_btc = db.Column(db.Float, default=0.0)   # Bitcoin
+    _wallet_eth = db.Column(db.Float, default=0.0)   # Ethereum
+    _wallet_sol = db.Column(db.Float, default=0.0)   # Solana
+    _wallet_ada = db.Column(db.Float, default=0.0)   # Cardano
+    _wallet_doge = db.Column(db.Float, default=0.0)  # Dogecoin
+    
+    # JSON fields
     _inventory = db.Column(db.Text, default='[]')
     _scores = db.Column(db.Text, default='{}')
-    _minigames_completed = db.Column(db.Text, default='{}')
+    
+    # Individual minigame completion flags
+    _completed_crypto_miner = db.Column(db.Boolean, default=False)
+    _completed_infinite_user = db.Column(db.Boolean, default=False)
+    _completed_laundry = db.Column(db.Boolean, default=False)
+    _completed_ash_trail = db.Column(db.Boolean, default=False)
+    _completed_whackarat = db.Column(db.Boolean, default=False)
+    _completed_all = db.Column(db.Boolean, default=False)
+    
+    # Intro tracking
     _has_seen_intro = db.Column(db.Boolean, default=False)
     
-    def __init__(self, uid):
-        self._uid = uid
-        self._wallet = json.dumps(self._default_wallet())
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship to User
+    user = db.relationship('User', backref=db.backref('dbs2_player', uselist=False, lazy=True))
+    
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self._crypto = 0
+        self._wallet_btc = 0.0
+        self._wallet_eth = 0.0
+        self._wallet_sol = 0.0
+        self._wallet_ada = 0.0
+        self._wallet_doge = 0.0
         self._inventory = '[]'
         self._scores = '{}'
-        self._minigames_completed = '{}'
+        self._completed_crypto_miner = False
+        self._completed_infinite_user = False
+        self._completed_laundry = False
+        self._completed_ash_trail = False
+        self._completed_whackarat = False
+        self._completed_all = False
         self._has_seen_intro = False
-    
-    @staticmethod
-    def _default_wallet():
-        """Return default empty wallet structure"""
-        return {
-            'satoshis': 0,
-            'bitcoin': 0.0,
-            'ethereum': 0.0,
-            'solana': 0.0,
-            'cardano': 0.0,
-            'dogecoin': 0.0
-        }
     
     # ==================== WALLET PROPERTIES ====================
     
     @property
     def wallet(self):
-        """Get wallet as dictionary"""
-        try:
-            w = json.loads(self._wallet)
-            # Ensure all coins exist
-            default = self._default_wallet()
-            for key in default:
-                if key not in w:
-                    w[key] = default[key]
-            return w
-        except:
-            return self._default_wallet()
-    
-    @wallet.setter
-    def wallet(self, wallet_dict):
-        """Set wallet from dictionary"""
-        if isinstance(wallet_dict, dict):
-            self._wallet = json.dumps(wallet_dict)
-        else:
-            self._wallet = json.dumps(self._default_wallet())
-    
-    @property
-    def satoshis(self):
-        """Get satoshi balance (main score)"""
-        return self.wallet.get('satoshis', 0)
-    
-    @property
-    def crypto(self):
-        """Backwards compatibility - returns satoshis"""
-        return self.satoshis
-    
-    # ==================== WALLET METHODS ====================
-    
-    def add_satoshis(self, amount):
-        """Add satoshis to wallet"""
-        w = self.wallet
-        w['satoshis'] = w.get('satoshis', 0) + int(amount)
-        self.wallet = w
-        db.session.commit()
-        return w['satoshis']
-    
-    def add_coin(self, coin_id, amount):
-        """Add cryptocurrency to wallet"""
-        if coin_id not in SUPPORTED_COINS:
-            return None
-        w = self.wallet
-        w[coin_id] = w.get(coin_id, 0.0) + float(amount)
-        self.wallet = w
-        db.session.commit()
-        return w[coin_id]
-    
-    def update_wallet(self, updates):
-        """
-        Update multiple wallet balances at once.
-        
-        Args:
-            updates (dict): {'satoshis': 100, 'bitcoin': 0.001, ...}
-        
-        Returns:
-            dict: Updated wallet
-        """
-        w = self.wallet
-        for key, amount in updates.items():
-            if key == 'satoshis':
-                w['satoshis'] = w.get('satoshis', 0) + int(amount)
-            elif key in SUPPORTED_COINS:
-                w[key] = w.get(key, 0.0) + float(amount)
-        self.wallet = w
-        db.session.commit()
-        return w
-    
-    def convert_to_satoshis(self, coin_id, amount, exchange_rate):
-        """
-        Convert cryptocurrency to satoshis.
-        
-        Args:
-            coin_id (str): Coin to convert (e.g., 'bitcoin')
-            amount (float): Amount of coin to convert
-            exchange_rate (float): Current USD price of coin
-        
-        Returns:
-            dict: {'success': bool, 'satoshis_gained': int, 'wallet': dict}
-        """
-        if coin_id not in SUPPORTED_COINS:
-            return {'success': False, 'error': 'Invalid coin'}
-        
-        w = self.wallet
-        current_balance = w.get(coin_id, 0.0)
-        
-        if amount > current_balance:
-            return {'success': False, 'error': 'Insufficient balance'}
-        
-        # Convert: coin_amount * USD_price * 100 (1 USD = 100 satoshis in our game)
-        satoshis_gained = int(amount * exchange_rate * 100)
-        
-        w[coin_id] = current_balance - amount
-        w['satoshis'] = w.get('satoshis', 0) + satoshis_gained
-        self.wallet = w
-        db.session.commit()
-        
+        """Get full wallet as dictionary"""
         return {
-            'success': True,
-            'satoshis_gained': satoshis_gained,
-            'wallet': w
+            'satoshis': self._crypto,
+            'bitcoin': self._wallet_btc or 0.0,
+            'ethereum': self._wallet_eth or 0.0,
+            'solana': self._wallet_sol or 0.0,
+            'cardano': self._wallet_ada or 0.0,
+            'dogecoin': self._wallet_doge or 0.0
         }
     
-    # ==================== LEGACY CRYPTO METHODS (backwards compat) ====================
-    
-    def add_crypto(self, amount):
-        """Backwards compatibility - adds satoshis"""
-        return self.add_satoshis(amount)
-    
-    def set_crypto(self, amount):
-        """Backwards compatibility - sets satoshis"""
-        w = self.wallet
-        w['satoshis'] = int(amount)
-        self.wallet = w
+    def add_to_wallet(self, coin_id, amount):
+        """Add amount to a specific coin balance"""
+        field_map = {
+            'satoshis': '_crypto',
+            'bitcoin': '_wallet_btc',
+            'ethereum': '_wallet_eth',
+            'solana': '_wallet_sol',
+            'cardano': '_wallet_ada',
+            'dogecoin': '_wallet_doge'
+        }
+        
+        if coin_id not in field_map:
+            return False
+        
+        field = field_map[coin_id]
+        current = getattr(self, field, 0) or 0
+        
+        if coin_id == 'satoshis':
+            setattr(self, field, max(0, int(current + amount)))
+        else:
+            setattr(self, field, max(0.0, float(current + amount)))
+        
         db.session.commit()
-        return w['satoshis']
+        return True
     
-    # ==================== INVENTORY METHODS ====================
+    # ==================== INVENTORY PROPERTY ====================
     
     @property
     def inventory(self):
+        """Get inventory as list"""
         try:
             return json.loads(self._inventory)
         except:
             return []
     
     @inventory.setter
-    def inventory(self, inv_list):
-        self._inventory = json.dumps(inv_list) if isinstance(inv_list, list) else '[]'
+    def inventory(self, value):
+        """Set inventory from list"""
+        if isinstance(value, list):
+            self._inventory = json.dumps(value)
+        else:
+            self._inventory = '[]'
+        db.session.commit()
     
     def add_inventory_item(self, item):
+        """Add item to inventory"""
         inv = self.inventory
         inv.append(item)
         self._inventory = json.dumps(inv)
@@ -196,6 +143,7 @@ class DBS2Player(db.Model):
         return inv
     
     def remove_inventory_item(self, index):
+        """Remove item from inventory by index"""
         inv = self.inventory
         if 0 <= index < len(inv):
             removed = inv.pop(index)
@@ -204,99 +152,162 @@ class DBS2Player(db.Model):
             return removed
         return None
     
-    # ==================== SCORES METHODS ====================
+    # ==================== SCORES PROPERTY ====================
     
     @property
     def scores(self):
+        """Get scores as dict"""
         try:
             return json.loads(self._scores)
         except:
             return {}
     
     @scores.setter
-    def scores(self, score_dict):
-        self._scores = json.dumps(score_dict) if isinstance(score_dict, dict) else '{}'
+    def scores(self, value):
+        """Set scores from dict"""
+        if isinstance(value, dict):
+            self._scores = json.dumps(value)
+        else:
+            self._scores = '{}'
+        db.session.commit()
     
     def update_score(self, game, score):
         """Update score for a game (keeps highest)"""
-        current = self.scores
-        if game not in current or score > current[game]:
-            current[game] = score
-            self._scores = json.dumps(current)
+        current_scores = self.scores
+        if game not in current_scores or score > current_scores[game]:
+            current_scores[game] = score
+            self._scores = json.dumps(current_scores)
             db.session.commit()
-        return current
+        return current_scores
     
-    # ==================== MINIGAMES METHODS ====================
+    # ==================== UPDATE METHOD ====================
     
-    @property
-    def minigames_completed(self):
-        try:
-            return json.loads(self._minigames_completed)
-        except:
-            return {}
-    
-    @minigames_completed.setter
-    def minigames_completed(self, completed_dict):
-        self._minigames_completed = json.dumps(completed_dict) if isinstance(completed_dict, dict) else '{}'
-    
-    def complete_minigame(self, game_name):
-        completed = self.minigames_completed
-        completed[game_name] = True
-        self._minigames_completed = json.dumps(completed)
+    def update(self, data):
+        """Update player with dictionary of values"""
+        if not data:
+            return self
+        
+        # Crypto/satoshis
+        if 'crypto' in data:
+            self._crypto = max(0, int(data['crypto']))
+        if 'satoshis' in data:
+            self._crypto = max(0, int(data['satoshis']))
+        if 'add_crypto' in data:
+            self._crypto = max(0, self._crypto + int(data['add_crypto']))
+        
+        # Wallet coins
+        if 'wallet_btc' in data:
+            self._wallet_btc = max(0.0, float(data['wallet_btc']))
+        if 'wallet_eth' in data:
+            self._wallet_eth = max(0.0, float(data['wallet_eth']))
+        if 'wallet_sol' in data:
+            self._wallet_sol = max(0.0, float(data['wallet_sol']))
+        if 'wallet_ada' in data:
+            self._wallet_ada = max(0.0, float(data['wallet_ada']))
+        if 'wallet_doge' in data:
+            self._wallet_doge = max(0.0, float(data['wallet_doge']))
+        
+        # Inventory
+        if 'inventory' in data:
+            self.inventory = data['inventory']
+        
+        # Scores
+        if 'scores' in data:
+            self.scores = data['scores']
+        
+        # Minigame completions
+        if 'completed_crypto_miner' in data:
+            self._completed_crypto_miner = bool(data['completed_crypto_miner'])
+        if 'completed_infinite_user' in data:
+            self._completed_infinite_user = bool(data['completed_infinite_user'])
+        if 'completed_laundry' in data:
+            self._completed_laundry = bool(data['completed_laundry'])
+        if 'completed_ash_trail' in data:
+            self._completed_ash_trail = bool(data['completed_ash_trail'])
+        if 'completed_whackarat' in data:
+            self._completed_whackarat = bool(data['completed_whackarat'])
+        
+        # Update completed_all flag
+        self._completed_all = (
+            self._completed_ash_trail and
+            self._completed_crypto_miner and
+            self._completed_whackarat and
+            self._completed_laundry and
+            self._completed_infinite_user
+        )
+        
+        # Intro
+        if 'has_seen_intro' in data:
+            self._has_seen_intro = bool(data['has_seen_intro'])
+        
         db.session.commit()
-        return completed
+        return self
     
-    def is_minigame_completed(self, game_name):
-        return self.minigames_completed.get(game_name, False)
+    # ==================== READ METHOD ====================
     
-    # ==================== INTRO TRACKING ====================
-    
-    @property
-    def has_seen_intro(self):
-        return self._has_seen_intro
-    
-    def mark_intro_seen(self):
-        self._has_seen_intro = True
-        db.session.commit()
-        return True
-    
-    # ==================== UID PROPERTY ====================
-    
-    @property
-    def uid(self):
-        return self._uid
+    def read(self):
+        """Serialize player to dictionary"""
+        user_info = {}
+        if self.user:
+            user_info = {
+                'id': self.user.id,
+                'uid': getattr(self.user, '_uid', None),
+                'name': getattr(self.user, '_name', None)
+            }
+        
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user_info': user_info,
+            'crypto': self._crypto,
+            'satoshis': self._crypto,
+            'wallet': self.wallet,
+            'inventory': self.inventory,
+            'scores': self.scores,
+            'completed_crypto_miner': self._completed_crypto_miner,
+            'completed_infinite_user': self._completed_infinite_user,
+            'completed_laundry': self._completed_laundry,
+            'completed_ash_trail': self._completed_ash_trail,
+            'completed_whackarat': self._completed_whackarat,
+            'completed_all': self._completed_all,
+            'has_seen_intro': self._has_seen_intro,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
     
     # ==================== STATIC METHODS ====================
     
     @staticmethod
-    def get_or_create(uid):
+    def get_or_create(user_id):
         """Get existing player or create new one"""
-        player = DBS2Player.query.filter_by(_uid=uid).first()
+        player = DBS2Player.query.filter_by(user_id=user_id).first()
         if not player:
-            player = DBS2Player(uid)
+            player = DBS2Player(user_id)
             db.session.add(player)
             db.session.commit()
         return player
     
     @staticmethod
+    def get_by_user_id(user_id):
+        """Get player by user_id"""
+        return DBS2Player.query.filter_by(user_id=user_id).first()
+    
+    @staticmethod
     def get_all_players():
-        """Get all players for leaderboard"""
-        return DBS2Player.query.all()
+        """Get all players as list of dicts"""
+        players = DBS2Player.query.all()
+        return [p.read() for p in players]
     
-    # ==================== SERIALIZATION ====================
-    
-    def to_dict(self):
-        """Serialize player to dictionary"""
-        return {
-            'uid': self.uid,
-            'wallet': self.wallet,
-            'satoshis': self.satoshis,
-            'crypto': self.crypto,  # backwards compat
-            'inventory': self.inventory,
-            'scores': self.scores,
-            'minigames_completed': self.minigames_completed,
-            'has_seen_intro': self.has_seen_intro
-        }
+    @staticmethod
+    def get_leaderboard(limit=10):
+        """Get top players by crypto"""
+        players = DBS2Player.query.order_by(DBS2Player._crypto.desc()).limit(limit).all()
+        leaderboard = []
+        for i, player in enumerate(players):
+            data = player.read()
+            data['rank'] = i + 1
+            leaderboard.append(data)
+        return leaderboard
 
 
 def initDBS2Players():
@@ -305,12 +316,14 @@ def initDBS2Players():
         db.create_all()
         
         # Create test players if they don't exist
-        test_users = ['west', 'cyrus', 'maya']
-        for uid in test_users:
-            if not DBS2Player.query.filter_by(_uid=uid).first():
-                player = DBS2Player(uid)
-                player.add_satoshis(100)  # Starting satoshis
-                db.session.add(player)
+        test_uids = ['west', 'cyrus', 'maya']
+        for uid in test_uids:
+            user = User.query.filter_by(_uid=uid).first()
+            if user:
+                if not DBS2Player.query.filter_by(user_id=user.id).first():
+                    player = DBS2Player(user.id)
+                    player._crypto = 100  # Starting satoshis
+                    db.session.add(player)
         
         db.session.commit()
         print("DBS2 Players table initialized")
