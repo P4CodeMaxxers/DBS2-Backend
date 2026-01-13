@@ -42,4 +42,4 @@ ENV FLASK_ENV=production \
 EXPOSE 8403
 
 # Start Gunicorn server
-CMD ["gunicorn", "main:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8403", "main:app"]
