@@ -1,125 +1,233 @@
-from datetime import datetime
-from __init__ import db
-from sqlalchemy.exc import IntegrityError
+"""
+DBS2 Player Model - Original structure with multi-coin wallet support
+Place this in: model/dbs2_player.py
+"""
+
+from __init__ import app, db
+from model.user import User
 import json
+from datetime import datetime
 
 
 class DBS2Player(db.Model):
+    """
+    DBS2 Player model with:
+    - user_id foreign key to User
+    - Individual completion fields for each minigame
+    - _crypto for main satoshi balance
+    - Multi-coin wallet balances (BTC, ETH, SOL, ADA, DOGE)
+    - JSON fields for inventory and scores
+    """
     __tablename__ = 'dbs2_players'
     
+    # Primary key
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, unique=True)
     
+    # Foreign key to User
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True, nullable=False)
+    
+    # Main currency (satoshis)
     _crypto = db.Column(db.Integer, default=0)
+    
+    # Multi-coin wallet balances
+    _wallet_btc = db.Column(db.Float, default=0.0)   # Bitcoin
+    _wallet_eth = db.Column(db.Float, default=0.0)   # Ethereum
+    _wallet_sol = db.Column(db.Float, default=0.0)   # Solana
+    _wallet_ada = db.Column(db.Float, default=0.0)   # Cardano
+    _wallet_doge = db.Column(db.Float, default=0.0)  # Dogecoin
+    
+    # JSON fields
     _inventory = db.Column(db.Text, default='[]')
     _scores = db.Column(db.Text, default='{}')
     
-    _completed_ash_trail = db.Column(db.Boolean, default=False)
+    # Individual minigame completion flags
     _completed_crypto_miner = db.Column(db.Boolean, default=False)
-    _completed_whackarat = db.Column(db.Boolean, default=False)
-    _completed_laundry = db.Column(db.Boolean, default=False)
     _completed_infinite_user = db.Column(db.Boolean, default=False)
+    _completed_laundry = db.Column(db.Boolean, default=False)
+    _completed_ash_trail = db.Column(db.Boolean, default=False)
+    _completed_whackarat = db.Column(db.Boolean, default=False)
     _completed_all = db.Column(db.Boolean, default=False)
-    _escaped = db.Column(db.Boolean, default=False)
     
-    _created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    _updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Intro tracking
+    _has_seen_intro = db.Column(db.Boolean, default=False)
     
-    user = db.relationship('User', backref=db.backref('dbs2_player', uselist=False))
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    def __init__(self, user_id, crypto=0, inventory=None, scores=None):
+    # Relationship to User
+    user = db.relationship('User', backref=db.backref('dbs2_player', uselist=False, lazy=True))
+    
+    def __init__(self, user_id):
         self.user_id = user_id
-        self._crypto = crypto
-        self._inventory = json.dumps(inventory) if inventory else '[]'
-        self._scores = json.dumps(scores) if scores else '{}'
+        self._crypto = 0
+        self._wallet_btc = 0.0
+        self._wallet_eth = 0.0
+        self._wallet_sol = 0.0
+        self._wallet_ada = 0.0
+        self._wallet_doge = 0.0
+        self._inventory = '[]'
+        self._scores = '{}'
+        self._completed_crypto_miner = False
+        self._completed_infinite_user = False
+        self._completed_laundry = False
+        self._completed_ash_trail = False
+        self._completed_whackarat = False
+        self._completed_all = False
+        self._has_seen_intro = False
+    
+    # ==================== WALLET PROPERTIES ====================
     
     @property
-    def crypto(self):
-        return self._crypto
+    def wallet(self):
+        """Get full wallet as dictionary"""
+        return {
+            'satoshis': self._crypto,
+            'bitcoin': self._wallet_btc or 0.0,
+            'ethereum': self._wallet_eth or 0.0,
+            'solana': self._wallet_sol or 0.0,
+            'cardano': self._wallet_ada or 0.0,
+            'dogecoin': self._wallet_doge or 0.0
+        }
     
-    @crypto.setter
-    def crypto(self, value):
-        self._crypto = max(0, value)
+    def add_to_wallet(self, coin_id, amount):
+        """Add amount to a specific coin balance"""
+        field_map = {
+            'satoshis': '_crypto',
+            'bitcoin': '_wallet_btc',
+            'ethereum': '_wallet_eth',
+            'solana': '_wallet_sol',
+            'cardano': '_wallet_ada',
+            'dogecoin': '_wallet_doge'
+        }
+        
+        if coin_id not in field_map:
+            return False
+        
+        field = field_map[coin_id]
+        current = getattr(self, field, 0) or 0
+        
+        if coin_id == 'satoshis':
+            setattr(self, field, max(0, int(current + amount)))
+        else:
+            setattr(self, field, max(0.0, float(current + amount)))
+        
+        db.session.commit()
+        return True
+    
+    # ==================== INVENTORY PROPERTY ====================
     
     @property
     def inventory(self):
+        """Get inventory as list"""
         try:
             return json.loads(self._inventory)
         except:
             return []
     
     @inventory.setter
-    def inventory(self, items):
-        self._inventory = json.dumps(items) if isinstance(items, list) else '[]'
+    def inventory(self, value):
+        """Set inventory from list"""
+        if isinstance(value, list):
+            self._inventory = json.dumps(value)
+        else:
+            self._inventory = '[]'
+        db.session.commit()
+    
+    def add_inventory_item(self, item):
+        """Add item to inventory"""
+        inv = self.inventory
+        inv.append(item)
+        self._inventory = json.dumps(inv)
+        db.session.commit()
+        return inv
+    
+    def remove_inventory_item(self, index):
+        """Remove item from inventory by index"""
+        inv = self.inventory
+        if 0 <= index < len(inv):
+            removed = inv.pop(index)
+            self._inventory = json.dumps(inv)
+            db.session.commit()
+            return removed
+        return None
+    
+    # ==================== SCORES PROPERTY ====================
     
     @property
     def scores(self):
+        """Get scores as dict"""
         try:
             return json.loads(self._scores)
         except:
             return {}
     
     @scores.setter
-    def scores(self, score_dict):
-        self._scores = json.dumps(score_dict) if isinstance(score_dict, dict) else '{}'
+    def scores(self, value):
+        """Set scores from dict"""
+        if isinstance(value, dict):
+            self._scores = json.dumps(value)
+        else:
+            self._scores = '{}'
+        db.session.commit()
     
-    def create(self):
-        try:
-            db.session.add(self)
+    def update_score(self, game, score):
+        """Update score for a game (keeps highest)"""
+        current_scores = self.scores
+        if game not in current_scores or score > current_scores[game]:
+            current_scores[game] = score
+            self._scores = json.dumps(current_scores)
             db.session.commit()
-            return self
-        except IntegrityError:
-            db.session.rollback()
-            return None
+        return current_scores
     
-    def read(self):
-        user_info = {}
-        if self.user:
-            user_info = {
-                'uid': getattr(self.user, '_uid', None),
-                'name': getattr(self.user, '_name', None),
-            }
-        
-        return {
-            'id': self.id,
-            'user_id': self.user_id,
-            'user_info': user_info,
-            'crypto': self._crypto,
-            'inventory': self.inventory,
-            'scores': self.scores,
-            'completed_ash_trail': self._completed_ash_trail,
-            'completed_crypto_miner': self._completed_crypto_miner,
-            'completed_whackarat': self._completed_whackarat,
-            'completed_laundry': self._completed_laundry,
-            'completed_infinite_user': self._completed_infinite_user,
-            'completed_all': self._completed_all,
-            'escaped': self._escaped,
-            'created_at': self._created_at.isoformat() if self._created_at else None,
-            'updated_at': self._updated_at.isoformat() if self._updated_at else None
-        }
+    # ==================== UPDATE METHOD ====================
     
     def update(self, data):
+        """Update player with dictionary of values"""
+        if not data:
+            return self
+        
+        # Crypto/satoshis
         if 'crypto' in data:
-            self._crypto = data['crypto']
+            self._crypto = max(0, int(data['crypto']))
+        if 'satoshis' in data:
+            self._crypto = max(0, int(data['satoshis']))
         if 'add_crypto' in data:
-            self._crypto += data['add_crypto']
+            self._crypto = max(0, self._crypto + int(data['add_crypto']))
+        
+        # Wallet coins
+        if 'wallet_btc' in data:
+            self._wallet_btc = max(0.0, float(data['wallet_btc']))
+        if 'wallet_eth' in data:
+            self._wallet_eth = max(0.0, float(data['wallet_eth']))
+        if 'wallet_sol' in data:
+            self._wallet_sol = max(0.0, float(data['wallet_sol']))
+        if 'wallet_ada' in data:
+            self._wallet_ada = max(0.0, float(data['wallet_ada']))
+        if 'wallet_doge' in data:
+            self._wallet_doge = max(0.0, float(data['wallet_doge']))
+        
+        # Inventory
         if 'inventory' in data:
             self.inventory = data['inventory']
+        
+        # Scores
         if 'scores' in data:
             self.scores = data['scores']
-        if 'completed_ash_trail' in data:
-            self._completed_ash_trail = data['completed_ash_trail']
-        if 'completed_crypto_miner' in data:
-            self._completed_crypto_miner = data['completed_crypto_miner']
-        if 'completed_whackarat' in data:
-            self._completed_whackarat = data['completed_whackarat']
-        if 'completed_laundry' in data:
-            self._completed_laundry = data['completed_laundry']
-        if 'completed_infinite_user' in data:
-            self._completed_infinite_user = data['completed_infinite_user']
-        if 'escaped' in data:
-            self._escaped = data['escaped']
         
+        # Minigame completions
+        if 'completed_crypto_miner' in data:
+            self._completed_crypto_miner = bool(data['completed_crypto_miner'])
+        if 'completed_infinite_user' in data:
+            self._completed_infinite_user = bool(data['completed_infinite_user'])
+        if 'completed_laundry' in data:
+            self._completed_laundry = bool(data['completed_laundry'])
+        if 'completed_ash_trail' in data:
+            self._completed_ash_trail = bool(data['completed_ash_trail'])
+        if 'completed_whackarat' in data:
+            self._completed_whackarat = bool(data['completed_whackarat'])
+        
+        # Update completed_all flag
         self._completed_all = (
             self._completed_ash_trail and
             self._completed_crypto_miner and
@@ -128,152 +236,94 @@ class DBS2Player(db.Model):
             self._completed_infinite_user
         )
         
-        try:
-            db.session.commit()
-            return self
-        except:
-            db.session.rollback()
-            return None
-    
-    def delete(self):
-        try:
-            db.session.delete(self)
-            db.session.commit()
-            return True
-        except:
-            db.session.rollback()
-            return False
-    
-    def add_inventory_item(self, item):
-        current = self.inventory
-        current.append(item)
-        self.inventory = current
+        # Intro
+        if 'has_seen_intro' in data:
+            self._has_seen_intro = bool(data['has_seen_intro'])
+        
         db.session.commit()
-        return self.inventory
+        return self
     
-    def remove_inventory_item(self, index):
-        current = self.inventory
-        if 0 <= index < len(current):
-            removed = current.pop(index)
-            self.inventory = current
-            db.session.commit()
-            return removed
-        return None
+    # ==================== READ METHOD ====================
     
-    def update_score(self, game_name, score):
-        current = self.scores
-        if game_name not in current or score > current[game_name]:
-            current[game_name] = score
-            self.scores = current
-            db.session.commit()
-            return True
-        return False
+    def read(self):
+        """Serialize player to dictionary"""
+        user_info = {}
+        if self.user:
+            user_info = {
+                'id': self.user.id,
+                'uid': getattr(self.user, '_uid', None),
+                'name': getattr(self.user, '_name', None)
+            }
+        
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user_info': user_info,
+            'crypto': self._crypto,
+            'satoshis': self._crypto,
+            'wallet': self.wallet,
+            'inventory': self.inventory,
+            'scores': self.scores,
+            'completed_crypto_miner': self._completed_crypto_miner,
+            'completed_infinite_user': self._completed_infinite_user,
+            'completed_laundry': self._completed_laundry,
+            'completed_ash_trail': self._completed_ash_trail,
+            'completed_whackarat': self._completed_whackarat,
+            'completed_all': self._completed_all,
+            'has_seen_intro': self._has_seen_intro,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
     
-    @staticmethod
-    def get_by_user_id(user_id):
-        return DBS2Player.query.filter_by(user_id=user_id).first()
+    # ==================== STATIC METHODS ====================
     
     @staticmethod
     def get_or_create(user_id):
-        player = DBS2Player.get_by_user_id(user_id)
-        if player is None:
-            player = DBS2Player(user_id=user_id)
-            player.create()
+        """Get existing player or create new one"""
+        player = DBS2Player.query.filter_by(user_id=user_id).first()
+        if not player:
+            player = DBS2Player(user_id)
+            db.session.add(player)
+            db.session.commit()
         return player
     
     @staticmethod
-    def get_leaderboard(limit=10):
-        players = DBS2Player.query.order_by(DBS2Player._crypto.desc()).limit(limit).all()
-        leaderboard = []
-        rank = 1
-        for player in players:
-            entry = player.read()
-            entry['rank'] = rank
-            leaderboard.append(entry)
-            rank += 1
-        return leaderboard
+    def get_by_user_id(user_id):
+        """Get player by user_id"""
+        return DBS2Player.query.filter_by(user_id=user_id).first()
     
     @staticmethod
     def get_all_players():
+        """Get all players as list of dicts"""
         players = DBS2Player.query.all()
         return [p.read() for p in players]
+    
+    @staticmethod
+    def get_leaderboard(limit=10):
+        """Get top players by crypto"""
+        players = DBS2Player.query.order_by(DBS2Player._crypto.desc()).limit(limit).all()
+        leaderboard = []
+        for i, player in enumerate(players):
+            data = player.read()
+            data['rank'] = i + 1
+            leaderboard.append(data)
+        return leaderboard
 
 
 def initDBS2Players():
-    db.create_all()
-    
-    from model.user import User
-    
-    test_users = [
-        {
-            'uid': 'west',
-            'name': 'West',
-            'crypto': 1250,
-            'inventory': [
-                {'id': 'scrap1', 'name': 'DeFi Grimoire Page', 'found_at': 'bookshelf'},
-                {'id': 'scrap2', 'name': 'Laundry Code', 'found_at': 'laundry'}
-            ],
-            'scores': {'ash_trail': 95, 'crypto_miner': 1500, 'whackarat': 800},
-            'completed_ash_trail': True,
-            'completed_crypto_miner': True,
-            'completed_whackarat': True,
-            'completed_laundry': True,
-            'completed_infinite_user': True
-        },
-        {
-            'uid': 'cyrus',
-            'name': 'Cyrus',
-            'crypto': 980,
-            'inventory': [
-                {'id': 'scrap1', 'name': 'DeFi Grimoire Page', 'found_at': 'bookshelf'}
-            ],
-            'scores': {'ash_trail': 88, 'crypto_miner': 1200, 'whackarat': 650},
-            'completed_ash_trail': True,
-            'completed_crypto_miner': True,
-            'completed_whackarat': True,
-            'completed_laundry': False,
-            'completed_infinite_user': False
-        },
-        {
-            'uid': 'maya',
-            'name': 'Maya',
-            'crypto': 750,
-            'inventory': [],
-            'scores': {'ash_trail': 72, 'crypto_miner': 900},
-            'completed_ash_trail': True,
-            'completed_crypto_miner': True,
-            'completed_whackarat': False,
-            'completed_laundry': False,
-            'completed_infinite_user': False
-        }
-    ]
-    
-    for data in test_users:
-        user = User.query.filter_by(_uid=data['uid']).first()
-        if not user:
-            user = User(name=data['name'], uid=data['uid'], password='dbs2test')
-            user.create()
+    """Initialize DBS2 players table"""
+    with app.app_context():
+        db.create_all()
         
-        player = DBS2Player.get_by_user_id(user.id)
-        if not player:
-            player = DBS2Player(
-                user_id=user.id,
-                crypto=data['crypto'],
-                inventory=data['inventory'],
-                scores=data['scores']
-            )
-            player._completed_ash_trail = data['completed_ash_trail']
-            player._completed_crypto_miner = data['completed_crypto_miner']
-            player._completed_whackarat = data['completed_whackarat']
-            player._completed_laundry = data['completed_laundry']
-            player._completed_infinite_user = data['completed_infinite_user']
-            player._completed_all = all([
-                data['completed_ash_trail'],
-                data['completed_crypto_miner'],
-                data['completed_whackarat'],
-                data['completed_laundry'],
-                data['completed_infinite_user']
-            ])
-            player.create()
-    
-    print("DBS2 Players initialized with test users: West, Cyrus, Maya")
+        # Create test players if they don't exist
+        test_uids = ['west', 'cyrus', 'maya']
+        for uid in test_uids:
+            user = User.query.filter_by(_uid=uid).first()
+            if user:
+                if not DBS2Player.query.filter_by(user_id=user.id).first():
+                    player = DBS2Player(user.id)
+                    player._crypto = 100  # Starting satoshis
+                    db.session.add(player)
+        
+        db.session.commit()
+        print("DBS2 Players table initialized")
