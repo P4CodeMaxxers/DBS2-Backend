@@ -6,8 +6,8 @@
     <header class="pb-3 mb-4 border-bottom border-primary text-light">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <h1 class="fs-4">🎮 DBS2 Admin Dashboard</h1>
-                <p class="text-muted mb-0">Manage player crypto, inventory, and game progress</p>
+                <h1 class="fs-4">DBS2 Admin Dashboard</h1>
+                <p class="text-muted mb-0">Manage player wallet, inventory, and game progress</p>
             </div>
             <div>
                 <button class="btn btn-success me-2" onclick="openBulkCryptoModal()">💰 Bulk Add Crypto</button>
@@ -30,7 +30,7 @@
             <div class="card bg-dark text-light border-warning">
                 <div class="card-body text-center">
                     <h2 class="display-6 text-warning" id="statTotalCrypto">-</h2>
-                    <p class="text-muted mb-0">Total Crypto</p>
+                    <p class="text-muted mb-0">Total Satoshis</p>
                 </div>
             </div>
         </div>
@@ -38,7 +38,7 @@
             <div class="card bg-dark text-light border-info">
                 <div class="card-body text-center">
                     <h2 class="display-6 text-info" id="statAvgCrypto">-</h2>
-                    <p class="text-muted mb-0">Avg Crypto</p>
+                    <p class="text-muted mb-0">Avg Satoshis</p>
                 </div>
             </div>
         </div>
@@ -55,7 +55,7 @@
     <!-- Leaderboard Section -->
     <div class="card bg-dark text-light mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h2 class="h5 mb-0">🏆 Leaderboard (Top 10 by Crypto)</h2>
+            <h2 class="h5 mb-0">🏆 Leaderboard (Top 10 by Satoshis)</h2>
             <small class="text-muted" id="leaderboardStatus">Loading...</small>
         </div>
         <div class="card-body p-0">
@@ -65,7 +65,7 @@
                         <th width="60">Rank</th>
                         <th>Player</th>
                         <th>UID</th>
-                        <th>Crypto</th>
+                        <th>Satoshis</th>
                         <th>Scraps</th>
                         <th>Minigames</th>
                     </tr>
@@ -122,7 +122,7 @@
                 </div>
                 <div class="col-md-4 text-end">
                     <select class="form-select form-select-sm bg-secondary text-light border-0 d-inline-block w-auto" id="sortSelect">
-                        <option value="crypto">Sort: Crypto ↓</option>
+                        <option value="crypto">Sort: Satoshis ↓</option>
                         <option value="name">Sort: Name A-Z</option>
                         <option value="updated">Sort: Last Active</option>
                     </select>
@@ -137,7 +137,7 @@
                             <th>#</th>
                             <th>Player</th>
                             <th>UID</th>
-                            <th>Crypto</th>
+                            <th>Satoshis</th>
                             <th>Ash Trail %</th>
                             <th>Scraps</th>
                             <th>Minigames</th>
@@ -175,17 +175,17 @@
     <div class="modal-dialog">
         <div class="modal-content bg-dark text-light">
             <div class="modal-header border-secondary">
-                <h5 class="modal-title">💰 Edit Crypto - <span id="editCryptoPlayerName"></span></h5>
+                <h5 class="modal-title">Edit Satoshis - <span id="editCryptoPlayerName"></span></h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="editCryptoUID">
                 <div class="mb-3">
-                    <label class="form-label">Current Crypto</label>
+                    <label class="form-label">Current Satoshis</label>
                     <input type="text" class="form-control bg-secondary text-light" id="currentCryptoDisplay" disabled>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Set Crypto To</label>
+                    <label class="form-label">Set Satoshis To</label>
                     <input type="number" class="form-control bg-secondary text-light" id="editCryptoValue" min="0" placeholder="Enter amount">
                 </div>
                 <div class="mb-3">
@@ -202,7 +202,7 @@
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" onclick="resetPlayerCrypto()">Reset to 0</button>
-                <button type="button" class="btn btn-primary" onclick="saveCrypto()">💾 Save</button>
+                <button type="button" class="btn btn-primary" onclick="saveCrypto()">Save</button>
             </div>
         </div>
     </div>
@@ -275,31 +275,31 @@
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_crypto_miner">
-                            <label class="form-check-label" for="scrap_crypto_miner">⛏️ Crypto Miner</label>
+                            <label class="form-check-label" for="scrap_crypto_miner">Crypto Miner</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_infinite_user">
-                            <label class="form-check-label" for="scrap_infinite_user">💻 Infinite User</label>
+                            <label class="form-check-label" for="scrap_infinite_user">Infinite User</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_laundry">
-                            <label class="form-check-label" for="scrap_laundry">🧺 Laundry</label>
+                            <label class="form-check-label" for="scrap_laundry">Laundry</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_ash_trail">
-                            <label class="form-check-label" for="scrap_ash_trail">📚 Ash Trail</label>
+                            <label class="form-check-label" for="scrap_ash_trail">Ash Trail</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_whackarat">
-                            <label class="form-check-label" for="scrap_whackarat">🐀 Whack-a-Rat</label>
+                            <label class="form-check-label" for="scrap_whackarat">Whack-a-Rat</label>
                         </div>
                     </div>
                 </div>
@@ -334,7 +334,7 @@
     <div class="modal-dialog">
         <div class="modal-content bg-dark text-light">
             <div class="modal-header border-secondary">
-                <h5 class="modal-title">💰 Bulk Add Crypto</h5>
+                <h5 class="modal-title">Bulk Add Satoshis</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -342,7 +342,7 @@
                     <label class="form-label">Amount to add to ALL players</label>
                     <input type="number" class="form-control bg-secondary text-light" id="bulkCryptoAmount" placeholder="e.g., 50">
                 </div>
-                <div class="alert alert-warning">⚠️ This affects ALL players in the database.</div>
+                <div class="alert alert-warning">This affects ALL players in the database.</div>
             </div>
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
