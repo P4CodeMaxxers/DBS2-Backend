@@ -29,7 +29,7 @@ import os
 import re
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins='*')
+CORS(app, supports_credentials=True, origins=["https://p4codemaxxers.github.io"])
 
 api = Api(app)
 
