@@ -339,6 +339,6 @@ app.cli.add_command(custom_cli)
 # this runs the flask application on the development server
 if __name__ == "__main__":
     host = "0.0.0.0"
-    port = app.config['FLASK_PORT', 'http://p4codemaxxers.github.io']
+    port = app.config.get('FLASK_PORT', 8403)
     print(f"** Server running: http://localhost:{port}")  # Pretty link
     app.run(debug=True, host=host, port=port, use_reloader=False)
