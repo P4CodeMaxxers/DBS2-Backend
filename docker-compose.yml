@@ -10,3 +10,6 @@ services:
                 volumes:
                         - ./instance:/app/instance
                 restart: unless-stopped
+                environment:
+                        - FLASK_INSTANCE_PATH=/app/instance
+ 
