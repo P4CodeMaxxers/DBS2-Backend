@@ -87,13 +87,6 @@ app.register_blueprint(dbs2_api) # dbs2 database API
 app.register_blueprint(post_api)  # Register the social media post API
 # app.register_blueprint(announcement_api) ##temporary revert
 
-# Jokes file initialization
-with app.app_context():
-    initJokes()
-    initDBS2()
-    initDBS2Players()
-
-
 # Tell Flask-Login the view function name of your login route
 login_manager.login_view = "login"
 
@@ -328,10 +321,14 @@ custom_cli = AppGroup('custom', help='Custom commands')
 # Define a command to run the data generation functions
 @custom_cli.command('generate_data')
 def generate_data():
-    initUsers()
-    initMicroblogs()
-    initPersonas()
-    initPersonaUsers()
+    with app.app_context():
+        initUsers()
+        initMicroblogs()
+        initPersonas()
+        initPersonaUsers()
+        initJokes()
+        initDBS2()
+        initDBS2Players()
 
 # Register the custom command group with the Flask application
 app.cli.add_command(custom_cli)
