@@ -1,16 +1,17 @@
 """
-DBS2 Game API - Complete Backend with Admin Panel Support
+DBS2 Game API - Complete Backend with Wallet Support
 Place this in: api/dbs2_api.py
 
 Works with the DBS2Player model structure that has:
 - user_id (not _uid)
 - Individual _completed_* fields (not _minigames_completed dict)
+- Multi-coin wallet (_wallet_btc, _wallet_eth, _wallet_sol, _wallet_ada, _wallet_doge)
 - read(), get_all_players(), get_leaderboard() methods
 """
 
 from flask import Blueprint, request, g
 from flask_restful import Api, Resource
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 
 # Import your models and decorators
@@ -23,6 +24,72 @@ from api.jwt_authorize import token_required
 # Create Blueprint
 dbs2_api = Blueprint('dbs2_api', __name__, url_prefix='/api/dbs2')
 api = Api(dbs2_api)
+
+
+# ============================================================================
+# COIN CONFIGURATION
+# ============================================================================
+
+SUPPORTED_COINS = {
+    'satoshis': {
+        'symbol': 'SATS',
+        'name': 'Satoshis',
+        'coingecko_id': None,
+        'decimals': 0,
+        'field': '_crypto'
+    },
+    'bitcoin': {
+        'symbol': 'BTC',
+        'name': 'Bitcoin',
+        'coingecko_id': 'bitcoin',
+        'decimals': 8,
+        'field': '_wallet_btc'
+    },
+    'ethereum': {
+        'symbol': 'ETH',
+        'name': 'Ethereum',
+        'coingecko_id': 'ethereum',
+        'decimals': 6,
+        'field': '_wallet_eth'
+    },
+    'solana': {
+        'symbol': 'SOL',
+        'name': 'Solana',
+        'coingecko_id': 'solana',
+        'decimals': 4,
+        'field': '_wallet_sol'
+    },
+    'cardano': {
+        'symbol': 'ADA',
+        'name': 'Cardano',
+        'coingecko_id': 'cardano',
+        'decimals': 2,
+        'field': '_wallet_ada'
+    },
+    'dogecoin': {
+        'symbol': 'DOGE',
+        'name': 'Dogecoin',
+        'coingecko_id': 'dogecoin',
+        'decimals': 2,
+        'field': '_wallet_doge'
+    }
+}
+
+# Minigame to coin mapping
+MINIGAME_COINS = {
+    'crypto_miner': 'satoshis',
+    'whackarat': 'dogecoin',
+    'laundry': 'cardano',
+    'ash_trail': 'solana',
+    'infinite_user': 'ethereum'
+}
+
+# Price cache
+_price_cache = {
+    'prices': {},
+    'last_fetch': None,
+    'cache_duration': timedelta(minutes=2)
+}
 
 
 # ============================================================================
@@ -45,6 +112,74 @@ def format_minigames(player):
         'ash_trail': player._completed_ash_trail,
         'whackarat': player._completed_whackarat
     }
+
+
+def fetch_coin_prices():
+    """Fetch current prices from CoinGecko with caching"""
+    now = datetime.now()
+    
+    # Return cached if valid
+    if (_price_cache['last_fetch'] and 
+        now - _price_cache['last_fetch'] < _price_cache['cache_duration'] and
+        _price_cache['prices']):
+        return _price_cache['prices']
+    
+    # Build list of coingecko IDs
+    coin_ids = [c['coingecko_id'] for c in SUPPORTED_COINS.values() if c['coingecko_id']]
+    
+    try:
+        url = 'https://api.coingecko.com/api/v3/simple/price'
+        params = {
+            'ids': ','.join(coin_ids),
+            'vs_currencies': 'usd',
+            'include_24hr_change': 'true'
+        }
+        response = requests.get(url, params=params, timeout=5)
+        
+        if response.status_code == 200:
+            data = response.json()
+            prices = {}
+            
+            for coin_id, info in SUPPORTED_COINS.items():
+                cg_id = info['coingecko_id']
+                if cg_id and cg_id in data:
+                    prices[coin_id] = {
+                        'usd': data[cg_id].get('usd', 0),
+                        'change_24h': data[cg_id].get('usd_24h_change', 0)
+                    }
+                elif coin_id == 'satoshis':
+                    # Satoshis = 1/100,000,000 of Bitcoin
+                    btc_price = data.get('bitcoin', {}).get('usd', 0)
+                    prices['satoshis'] = {
+                        'usd': btc_price / 100_000_000,
+                        'change_24h': data.get('bitcoin', {}).get('usd_24h_change', 0)
+                    }
+            
+            _price_cache['prices'] = prices
+            _price_cache['last_fetch'] = now
+            return prices
+            
+    except Exception as e:
+        print(f'[DBS2] Price fetch error: {e}')
+    
+    # Return cached or empty
+    return _price_cache['prices'] or {}
+
+
+def calculate_sats_per_coin(coin_id, prices):
+    """Calculate how many satoshis one unit of a coin is worth"""
+    if coin_id == 'satoshis':
+        return 1
+    if coin_id == 'bitcoin':
+        return 100_000_000
+    
+    btc_price = prices.get('bitcoin', {}).get('usd', 1)
+    coin_price = prices.get(coin_id, {}).get('usd', 0)
+    
+    if btc_price <= 0 or coin_price <= 0:
+        return 0
+    
+    return int((coin_price / btc_price) * 100_000_000)
 
 
 # ============================================================================
@@ -75,7 +210,7 @@ class _PlayerResource(Resource):
 
 
 class _CryptoResource(Resource):
-    """Manage player's crypto currency"""
+    """Manage player's crypto currency (satoshis)"""
     
     @token_required()
     def get(self):
@@ -100,8 +235,219 @@ class _CryptoResource(Resource):
             player._crypto = max(0, player._crypto + int(data['add']))
         
         db.session.commit()
-        return {'crypto': player._crypto}, 200
+        return {'crypto': player._crypto, 'wallet': player.wallet}, 200
 
+
+# ============================================================================
+# WALLET ENDPOINTS (Authenticated)
+# ============================================================================
+
+class _WalletResource(Resource):
+    """Manage player's multi-coin wallet"""
+    
+    @token_required()
+    def get(self):
+        """GET /api/dbs2/wallet - Get full wallet"""
+        player = get_current_player()
+        if not player:
+            return {'error': 'Not authenticated'}, 401
+        
+        prices = fetch_coin_prices()
+        wallet = player.wallet
+        
+        # Calculate USD values
+        wallet_with_usd = {}
+        total_usd = 0
+        
+        for coin_id, balance in wallet.items():
+            price_info = prices.get(coin_id, {})
+            usd_value = balance * price_info.get('usd', 0)
+            total_usd += usd_value
+            
+            wallet_with_usd[coin_id] = {
+                'balance': balance,
+                'usd_value': round(usd_value, 2),
+                'price_usd': price_info.get('usd', 0),
+                'change_24h': price_info.get('change_24h', 0)
+            }
+        
+        return {
+            'wallet': wallet_with_usd,
+            'total_usd': round(total_usd, 2),
+            'raw_balances': wallet
+        }, 200
+    
+    @token_required()
+    def put(self):
+        """PUT /api/dbs2/wallet - Add to wallet balances"""
+        player = get_current_player()
+        if not player:
+            return {'error': 'Not authenticated'}, 401
+        
+        data = request.get_json()
+        
+        # Handle 'add' format: {add: {satoshis: 100, dogecoin: 5}}
+        if 'add' in data:
+            for coin_id, amount in data['add'].items():
+                if coin_id in SUPPORTED_COINS:
+                    player.add_to_wallet(coin_id, amount)
+        
+        # Handle direct format: {satoshis: 100, dogecoin: 5}
+        else:
+            for coin_id, amount in data.items():
+                if coin_id in SUPPORTED_COINS:
+                    player.add_to_wallet(coin_id, amount)
+        
+        return {'wallet': player.wallet}, 200
+
+
+class _WalletAddCoinResource(Resource):
+    """Add specific coin to wallet"""
+    
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/wallet/add - Add coin to wallet"""
+        player = get_current_player()
+        if not player:
+            return {'error': 'Not authenticated'}, 401
+        
+        data = request.get_json()
+        coin_id = data.get('coin', 'satoshis')
+        amount = data.get('amount', 0)
+        
+        if coin_id not in SUPPORTED_COINS:
+            return {'error': f'Unknown coin: {coin_id}'}, 400
+        
+        if amount <= 0:
+            return {'error': 'Amount must be positive'}, 400
+        
+        player.add_to_wallet(coin_id, amount)
+        
+        return {
+            'success': True,
+            'coin': coin_id,
+            'added': amount,
+            'wallet': player.wallet
+        }, 200
+
+
+class _WalletConvertResource(Resource):
+    """Convert between coins (5% fee)"""
+    
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/wallet/convert - Convert coin to satoshis"""
+        player = get_current_player()
+        if not player:
+            return {'error': 'Not authenticated'}, 401
+        
+        data = request.get_json()
+        from_coin = data.get('from_coin') or data.get('coin')
+        to_coin = data.get('to_coin', 'satoshis')
+        amount = float(data.get('amount', 0))
+        
+        if from_coin not in SUPPORTED_COINS:
+            return {'error': f'Unknown source coin: {from_coin}'}, 400
+        if to_coin not in SUPPORTED_COINS:
+            return {'error': f'Unknown target coin: {to_coin}'}, 400
+        if from_coin == to_coin:
+            return {'error': 'Cannot convert to same coin'}, 400
+        
+        # Check balance
+        wallet = player.wallet
+        current_balance = wallet.get(from_coin, 0)
+        
+        if amount <= 0:
+            return {'error': 'Amount must be positive'}, 400
+        if amount > current_balance:
+            return {'error': 'Insufficient balance'}, 400
+        
+        # Get prices and calculate conversion
+        prices = fetch_coin_prices()
+        from_sats = calculate_sats_per_coin(from_coin, prices)
+        to_sats = calculate_sats_per_coin(to_coin, prices)
+        
+        if from_sats <= 0 or to_sats <= 0:
+            return {'error': 'Cannot determine conversion rate'}, 400
+        
+        # Calculate: amount * from_rate / to_rate * (1 - fee)
+        sats_value = amount * from_sats
+        fee_rate = 0.05  # 5% fee
+        sats_after_fee = sats_value * (1 - fee_rate)
+        
+        if to_coin == 'satoshis':
+            received = int(sats_after_fee)
+        else:
+            received = sats_after_fee / to_sats
+            # Round to coin's decimal places
+            decimals = SUPPORTED_COINS[to_coin]['decimals']
+            received = round(received, decimals)
+        
+        # Execute conversion
+        player.add_to_wallet(from_coin, -amount)
+        player.add_to_wallet(to_coin, received)
+        
+        return {
+            'success': True,
+            'from_coin': from_coin,
+            'from_amount': amount,
+            'to_coin': to_coin,
+            'to_amount': received,
+            'fee_percent': fee_rate * 100,
+            'wallet': player.wallet
+        }, 200
+
+
+# ============================================================================
+# PRICE ENDPOINTS (Public)
+# ============================================================================
+
+class _PricesResource(Resource):
+    """Get current coin prices"""
+    
+    def get(self):
+        """GET /api/dbs2/prices - Get all coin prices"""
+        prices = fetch_coin_prices()
+        
+        result = {}
+        for coin_id, info in SUPPORTED_COINS.items():
+            price_data = prices.get(coin_id, {})
+            result[coin_id] = {
+                'symbol': info['symbol'],
+                'name': info['name'],
+                'price_usd': price_data.get('usd', 0),
+                'change_24h': price_data.get('change_24h', 0),
+                'sats_per_unit': calculate_sats_per_coin(coin_id, prices)
+            }
+        
+        return {'prices': result}, 200
+
+
+class _BitcoinBoostResource(Resource):
+    """Get Bitcoin-based reward multiplier"""
+    
+    def get(self):
+        """GET /api/dbs2/bitcoin-boost - Get boost multiplier based on BTC price"""
+        prices = fetch_coin_prices()
+        btc_data = prices.get('bitcoin', {})
+        
+        change_24h = btc_data.get('change_24h', 0)
+        
+        # Boost calculation: 1.0 base + 0.01 per percent change (capped)
+        boost = 1.0 + (change_24h * 0.01)
+        boost = max(0.5, min(2.0, boost))  # Cap between 0.5x and 2x
+        
+        return {
+            'boost_multiplier': round(boost, 2),
+            'btc_price_usd': btc_data.get('usd', 0),
+            'btc_change_24h': round(change_24h, 2),
+            'message': f'BTC {"up" if change_24h >= 0 else "down"} {abs(change_24h):.1f}% - {boost:.2f}x rewards'
+        }, 200
+
+
+# ============================================================================
+# INVENTORY ENDPOINTS
+# ============================================================================
 
 class _InventoryResource(Resource):
     """Manage player's inventory"""
@@ -144,6 +490,10 @@ class _InventoryResource(Resource):
         return {'inventory': player.inventory}, 200
 
 
+# ============================================================================
+# SCORES ENDPOINTS
+# ============================================================================
+
 class _ScoresResource(Resource):
     """Manage player's game scores"""
     
@@ -171,6 +521,10 @@ class _ScoresResource(Resource):
         
         return {'scores': player.scores}, 200
 
+
+# ============================================================================
+# MINIGAMES ENDPOINTS
+# ============================================================================
 
 class _MinigamesResource(Resource):
     """Track minigame completion"""
@@ -212,8 +566,40 @@ class _MinigamesResource(Resource):
         return {'minigames_completed': format_minigames(player)}, 200
 
 
+class _MinigameRewardResource(Resource):
+    """Reward player for minigame completion with appropriate coin"""
+    
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/minigame/reward - Award coin for minigame"""
+        player = get_current_player()
+        if not player:
+            return {'error': 'Not authenticated'}, 401
+        
+        data = request.get_json()
+        minigame = data.get('minigame')
+        amount = data.get('amount', 0)
+        
+        if not minigame:
+            return {'error': 'Minigame name required'}, 400
+        
+        # Get the coin for this minigame
+        coin_id = MINIGAME_COINS.get(minigame, 'satoshis')
+        
+        if amount > 0:
+            player.add_to_wallet(coin_id, amount)
+        
+        return {
+            'success': True,
+            'minigame': minigame,
+            'coin': coin_id,
+            'amount': amount,
+            'wallet': player.wallet
+        }, 200
+
+
 # ============================================================================
-# PUBLIC ENDPOINTS (No Auth Required)
+# LEADERBOARD ENDPOINTS (Public)
 # ============================================================================
 
 class _LeaderboardResource(Resource):
@@ -238,320 +624,115 @@ class _LeaderboardResource(Resource):
 
 
 class _MinigameLeaderboardResource(Resource):
-    """
-    Public minigame leaderboard.
-
-    GET /api/dbs2/leaderboard/minigame?game=ash_trail&limit=10
-
-    Returns:
-      {
-        "game": "ash_trail",
-        "leaderboard": [
-          { "rank": 1, "score": 97, "user_info": { "uid": "...", "name": "..." } }
-        ]
-      }
-    """
-
+    """Leaderboard for specific minigame scores"""
+    
     def get(self):
-        game = (request.args.get('game') or '').strip()
-        if not game:
-            return {'error': 'game query param required'}, 400
-
+        """GET /api/dbs2/leaderboard/minigame?game=ash_trail&limit=10"""
+        game = request.args.get('game', '')
         limit = min(int(request.args.get('limit', 10)), 100)
+        
+        if not game:
+            return {'error': 'Game parameter required'}, 400
+        
+        # Get all players with scores
+        players = DBS2Player.query.all()
+        
+        entries = []
+        for player in players:
+            scores = player.scores
+            if game in scores:
+                user_info = {}
+                if player.user:
+                    user_info = {
+                        'uid': getattr(player.user, '_uid', None),
+                        'name': getattr(player.user, '_name', None)
+                    }
+                entries.append({
+                    'user_info': user_info,
+                    'score': scores[game],
+                    'game': game
+                })
+        
+        # Sort by score descending
+        entries.sort(key=lambda x: x['score'], reverse=True)
+        
+        # Add ranks
+        for i, entry in enumerate(entries[:limit]):
+            entry['rank'] = i + 1
+        
+        return {'leaderboard': entries[:limit], 'game': game}, 200
 
-        # Use existing model read() output which already includes user_info + scores
-        players = DBS2Player.get_all_players()
 
-        # If this is an Ash Trail per-book score key, also attach a ghost `run_id` when available.
-        # game keys look like: ash_trail_defi_grimoire
-        ash_book_id = None
-        if game.startswith('ash_trail_'):
-            candidate = game.replace('ash_trail_', '', 1)
-            if candidate in {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}:
-                ash_book_id = candidate
-
-        scored = []
-        for p in players:
-            scores = p.get('scores') or {}
-            raw_score = scores.get(game, None)
-            if raw_score is None:
-                continue
-            try:
-                score = float(raw_score)
-            except Exception:
-                continue
-            scored.append({
-                'user_info': p.get('user_info', {}),
-                'score': score
-            })
-
-        scored.sort(key=lambda x: x.get('score', 0), reverse=True)
-        scored = scored[:limit]
-
-        # Preload best run ids for these users (only for Ash Trail books).
-        run_id_by_uid = {}
-        if ash_book_id and scored:
-            uids = [e.get('user_info', {}).get('uid') for e in scored if e.get('user_info', {}).get('uid')]
-            if uids:
-                users = User.query.filter(User._uid.in_(uids)).all()
-                uid_to_userid = {u._uid: u.id for u in users if getattr(u, '_uid', None)}
-                user_ids = list(uid_to_userid.values())
-                if user_ids:
-                    runs = (
-                        AshTrailRun.query
-                        .filter(AshTrailRun.book_id == ash_book_id)
-                        .filter(AshTrailRun.user_id.in_(user_ids))
-                        .order_by(AshTrailRun.user_id.asc(), AshTrailRun.score.desc(), AshTrailRun.created_at.desc())
-                        .all()
-                    )
-                    best_by_user = {}
-                    for r in runs:
-                        if r.user_id not in best_by_user:
-                            best_by_user[r.user_id] = r.id
-                    # invert back to uid for frontend payload
-                    for uid, user_id in uid_to_userid.items():
-                        if user_id in best_by_user:
-                            run_id_by_uid[uid] = best_by_user[user_id]
-
-        leaderboard = []
-        for idx, entry in enumerate(scored):
-            uid = (entry.get('user_info') or {}).get('uid')
-            leaderboard.append({
-                'rank': idx + 1,
-                'score': entry.get('score', 0),
-                'user_info': entry.get('user_info', {}),
-                'run_id': run_id_by_uid.get(uid) if uid else None
-            })
-
-        return {'game': game, 'leaderboard': leaderboard}, 200
-
+# ============================================================================
+# ASH TRAIL ENDPOINTS
+# ============================================================================
 
 class _AshTrailRunsResource(Resource):
-    """
-    Ash Trail ghost runs (replay traces) for a specific book.
-
-    POST /api/dbs2/ash-trail/runs
-      body: { book_id: "defi_grimoire", score: 72, trace: [{x,y}, ...] }
-
-    GET /api/dbs2/ash-trail/runs?book_id=defi_grimoire&limit=10
-      returns top runs by score for that book (no trace)
-    """
-
+    """Ash Trail run management"""
+    
+    def get(self):
+        """GET /api/dbs2/ash-trail/runs?book_id=defi_grimoire&limit=10"""
+        book_id = request.args.get('book_id', '')
+        limit = min(int(request.args.get('limit', 10)), 50)
+        
+        query = AshTrailRun.query
+        if book_id:
+            query = query.filter_by(book_id=book_id)
+        
+        runs = query.order_by(AshTrailRun.score.desc()).limit(limit).all()
+        
+        return {
+            'book_id': book_id,
+            'runs': [r.read(include_trace=False) for r in runs]
+        }, 200
+    
     @token_required()
     def post(self):
+        """POST /api/dbs2/ash-trail/runs - Submit a run"""
         player = get_current_player()
         if not player:
             return {'error': 'Not authenticated'}, 401
-
-        data = request.get_json() or {}
-        book_id = (data.get('book_id') or '').strip()
-        score = data.get('score', 0)
+        
+        data = request.get_json()
+        book_id = data.get('book_id', '')
+        score = float(data.get('score', 0))
         trace = data.get('trace', [])
-
-        allowed = {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}
-        if book_id not in allowed:
-            return {'error': 'Invalid book_id'}, 400
-
-        try:
-            score_f = float(score)
-        except Exception:
-            score_f = 0.0
-        score_f = max(0.0, min(100.0, score_f))
-
-        # Minimal validation + size cap (prevent huge payloads)
-        if not isinstance(trace, list):
-            return {'error': 'trace must be a list'}, 400
-        if len(trace) > 2500:
-            trace = trace[:2500]
-
-        # Store the run
-        run = AshTrailRun(user_id=g.current_user.id, book_id=book_id, score=score_f)
+        
+        if not book_id:
+            return {'error': 'book_id required'}, 400
+        
+        run = AshTrailRun(
+            user_id=g.current_user.id,
+            book_id=book_id,
+            score=score
+        )
         run.trace = trace
+        
         db.session.add(run)
         db.session.commit()
-
-        return {'run': run.read(include_trace=False)}, 201
-
-    def get(self):
-        book_id = (request.args.get('book_id') or '').strip()
-        allowed = {'defi_grimoire', 'lost_ledger', 'proof_of_burn'}
-        if book_id not in allowed:
-            return {'error': 'book_id query param required (defi_grimoire|lost_ledger|proof_of_burn)'}, 400
-
-        limit = min(int(request.args.get('limit', 10)), 50)
-
-        runs = (
-            AshTrailRun.query
-            .filter_by(book_id=book_id)
-            .order_by(AshTrailRun.score.desc(), AshTrailRun.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-
-        return {'book_id': book_id, 'runs': [r.read(include_trace=False) for r in runs]}, 200
+        
+        return {'run': run.read(include_trace=True)}, 201
 
 
 class _AshTrailRunDetailResource(Resource):
-    """
-    GET /api/dbs2/ash-trail/runs/<id>
-      returns run + trace for replay
-    """
-
-    def get(self, run_id: int):
+    """Get specific Ash Trail run with trace"""
+    
+    def get(self, run_id):
+        """GET /api/dbs2/ash-trail/runs/<run_id>"""
         run = AshTrailRun.query.get(run_id)
         if not run:
             return {'error': 'Run not found'}, 404
+        
         return {'run': run.read(include_trace=True)}, 200
 
 
 class _AshTrailAIResource(Resource):
-    """
-    Simple backend-generated (AI-like) narrative for Ash Trail.
-
-    POST /api/dbs2/ash-trail/ai
-      body: { book_id: "defi_grimoire", score: 72, trail_stats: {...} }
-
-    Returns:
-      {
-        "tone": "error|warn|good|great",
-        "speaker": "IShowGreen",
-        "dialogue": "...",
-        "page_title": "...",
-        "page_text": "..."
-      }
-    """
-
-    def post(self):
-        data = request.get_json() or {}
-        book_id = (data.get('book_id') or '').strip()
-        score = data.get('score', 0)
-        try:
-            s = float(score)
-        except Exception:
-            s = 0.0
-        s = max(0.0, min(100.0, s))
-
-        books = {
-            'defi_grimoire': {
-                'title': 'DeFi Grimoire',
-                'topic': 'decentralized finance',
-                'keywords': ['liquidity', 'swap', 'pool', 'yield', 'gas', 'vault', 'oracle'],
-            },
-            'lost_ledger': {
-                'title': 'Lost Ledger',
-                'topic': 'accounting the chain',
-                'keywords': ['blocks', 'entries', 'balance', 'hash', 'confirmations', 'ledger'],
-            },
-            'proof_of_burn': {
-                'title': 'Proof-of-Burn Almanac',
-                'topic': 'proof-of-burn',
-                'keywords': ['burn', 'supply', 'address', 'scarcity', 'verification', 'signal'],
-            },
-        }
-        meta = books.get(book_id) or {'title': 'Burnt Book', 'topic': 'memory', 'keywords': ['ash', 'ink', 'pages']}
-
-        # Score bands: <40 nonsense, 40-60 partial, 60-80 mostly coherent, 80-100 clean
-        if s < 40:
-            tone = 'error'
-            dialogue = (
-                'IShowGreen squints: "This reads like a toaster arguing with a spreadsheet. '
-                'You brought me ash, not information."'
-            )
-            page_title = f"{meta['title']} — Fragment (Corrupted)"
-            page_text = (
-                "…liquidity = bananas??\n"
-                "swap the *stairs* into a pool\n"
-                "gas fee: paid in whispers\n"
-                "NOTE: DO NOT ORACLE THE SPOON\n"
-                "…end of page (burnt through)"
-            )
-        elif s < 60:
-            tone = 'warn'
-            dialogue = (
-                'IShowGreen mutters: "Some of this is real… and some of it is smoke. '
-                'You’re close, but details are missing."'
-            )
-            page_title = f"{meta['title']} — Partial Recovery"
-            page_text = (
-                f"The page mentions {meta['topic']} and a {meta['keywords'][0]} pool,\n"
-                f"but the steps jump around and the {meta['keywords'][1]} rule is incomplete.\n"
-                "Several lines are smeared into black dust."
-            )
-        elif s < 80:
-            tone = 'good'
-            dialogue = (
-                'IShowGreen nods: "This mostly tracks. A few gaps, but I can reconstruct the rest. '
-                'Run it again if you want it perfect."'
-            )
-            page_title = f"{meta['title']} — Mostly Restored"
-            page_text = (
-                f"Key idea: {meta['topic']} works when participants provide {meta['keywords'][0]}.\n"
-                f"Rule of thumb: verify inputs (watch the {meta['keywords'][5] if len(meta['keywords'])>5 else meta['keywords'][2]}),\n"
-                "then execute the swap/step sequence in order.\n"
-                "One margin note is still burnt."
-            )
-        else:
-            tone = 'great'
-            dialogue = (
-                'IShowGreen smiles: "Perfect. Clean sequence, clean logic. '
-                'I can finally read this without guessing."'
-            )
-            page_title = f"{meta['title']} — Fully Restored"
-            page_text = (
-                f"Recovered summary of {meta['topic']}:\n"
-                f"- Provide {meta['keywords'][0]} to a pool\n"
-                f"- Validate via {meta['keywords'][6] if len(meta['keywords'])>6 else meta['keywords'][2]}\n"
-                f"- Execute swap with predictable {meta['keywords'][4] if len(meta['keywords'])>4 else 'fees'}\n"
-                "- Record results and verify confirmations\n"
-                "\nNo burn marks remain on this page."
-            )
-
-        return {
-            'tone': tone,
-            'speaker': 'IShowGreen',
-            'dialogue': dialogue,
-            'page_title': page_title,
-            'page_text': page_text,
-        }, 200
-
-class _BitcoinBoostResource(Resource):
-    """Get Bitcoin price data for crypto miner minigame"""
+    """AI endpoint for Ash Trail (placeholder)"""
     
-    def get(self):
-        """GET /api/dbs2/bitcoin-boost"""
-        try:
-            response = requests.get(
-                'https://api.coingecko.com/api/v3/simple/price',
-                params={
-                    'ids': 'bitcoin',
-                    'vs_currencies': 'usd',
-                    'include_24hr_change': 'true'
-                },
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                btc_price = data['bitcoin']['usd']
-                btc_change = data['bitcoin'].get('usd_24h_change', 0)
-                
-                boost = max(0.5, min(2.0, 1.0 + (btc_change / 20)))
-                
-                return {
-                    'btc_price_usd': btc_price,
-                    'btc_change_24h': round(btc_change, 2),
-                    'boost_multiplier': round(boost, 2),
-                    'message': f"BTC {'📈' if btc_change >= 0 else '📉'} {btc_change:+.2f}%"
-                }, 200
-        except Exception as e:
-            print(f"Bitcoin API error: {e}")
-        
-        return {
-            'btc_price_usd': 0,
-            'btc_change_24h': 0,
-            'boost_multiplier': 1.0,
-            'message': 'Bitcoin data unavailable'
-        }, 200
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/ash-trail/ai"""
+        return {'message': 'AI analysis not implemented'}, 501
 
 
 # ============================================================================
@@ -559,40 +740,23 @@ class _BitcoinBoostResource(Resource):
 # ============================================================================
 
 class _AdminAllPlayers(Resource):
-    """Get all DBS2 players - for admin panel"""
+    """Get all players for admin panel"""
     
     def get(self):
         """GET /api/dbs2/admin/players"""
         try:
-            sort_by = request.args.get('sort', 'crypto')
+            players = DBS2Player.query.all()
+            result = []
             
-            # Use the model's built-in method
-            players = DBS2Player.get_all_players()
-            
-            # Add minigames_completed format for each player
             for player in players:
-                player['minigames_completed'] = {
-                    'crypto_miner': player.get('completed_crypto_miner', False),
-                    'infinite_user': player.get('completed_infinite_user', False),
-                    'laundry': player.get('completed_laundry', False),
-                    'ash_trail': player.get('completed_ash_trail', False),
-                    'whackarat': player.get('completed_whackarat', False)
-                }
+                data = player.read()
+                data['minigames_completed'] = format_minigames(player)
+                result.append(data)
             
-            # Sort
-            if sort_by == 'crypto':
-                players.sort(key=lambda x: x.get('crypto', 0), reverse=True)
-            elif sort_by == 'name':
-                players.sort(key=lambda x: (x.get('user_info', {}).get('name') or '').lower())
-            elif sort_by == 'updated':
-                players.sort(key=lambda x: x.get('updated_at') or '', reverse=True)
+            # Sort by crypto descending
+            result.sort(key=lambda x: x.get('crypto', 0), reverse=True)
             
-            # Add rank
-            for i, player in enumerate(players):
-                player['rank'] = i + 1
-            
-            return {'players': players, 'total': len(players), 'sort': sort_by}, 200
-            
+            return {'players': result, 'count': len(result)}, 200
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -600,27 +764,32 @@ class _AdminAllPlayers(Resource):
 
 
 class _AdminPlayerDetail(Resource):
-    """Get/Update specific player by UID"""
+    """Admin manage single player"""
     
     def get(self, user_id):
         """GET /api/dbs2/admin/player/<user_id>"""
         try:
-            # Find user by uid string
+            # Try to find by uid first
             user = User.query.filter_by(_uid=user_id).first()
             if not user:
-                return {'error': f'User {user_id} not found'}, 404
+                # Try numeric ID
+                try:
+                    user = User.query.get(int(user_id))
+                except:
+                    pass
+            
+            if not user:
+                return {'error': 'User not found'}, 404
             
             player = DBS2Player.get_by_user_id(user.id)
             if not player:
-                return {'error': f'No DBS2 data for user {user_id}'}, 404
+                return {'error': 'Player not found'}, 404
             
-            result = player.read()
-            result['minigames_completed'] = format_minigames(player)
-            return result, 200
+            data = player.read()
+            data['minigames_completed'] = format_minigames(player)
+            return data, 200
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             return {'error': str(e)}, 500
     
     def put(self, user_id):
@@ -628,33 +797,37 @@ class _AdminPlayerDetail(Resource):
         try:
             user = User.query.filter_by(_uid=user_id).first()
             if not user:
-                return {'error': f'User {user_id} not found'}, 404
+                try:
+                    user = User.query.get(int(user_id))
+                except:
+                    pass
+            
+            if not user:
+                return {'error': 'User not found'}, 404
             
             player = DBS2Player.get_by_user_id(user.id)
             if not player:
-                return {'error': f'No DBS2 data for user {user_id}'}, 404
+                return {'error': 'Player not found'}, 404
             
             data = request.get_json()
             
-            # Handle reset
-            if data.get('reset'):
-                player._crypto = 0
-                player._inventory = '[]'
-                player._scores = '{}'
-                player._completed_ash_trail = False
-                player._completed_crypto_miner = False
-                player._completed_whackarat = False
-                player._completed_laundry = False
-                player._completed_infinite_user = False
-                player._completed_all = False
-                db.session.commit()
-                return {'message': f'Player {user_id} reset', 'crypto': 0}, 200
-            
-            # Handle crypto updates
+            # Handle crypto
             if 'crypto' in data:
                 player._crypto = max(0, int(data['crypto']))
             elif 'add_crypto' in data:
                 player._crypto = max(0, player._crypto + int(data['add_crypto']))
+            
+            # Handle wallet coins
+            if 'wallet_btc' in data:
+                player._wallet_btc = max(0.0, float(data['wallet_btc']))
+            if 'wallet_eth' in data:
+                player._wallet_eth = max(0.0, float(data['wallet_eth']))
+            if 'wallet_sol' in data:
+                player._wallet_sol = max(0.0, float(data['wallet_sol']))
+            if 'wallet_ada' in data:
+                player._wallet_ada = max(0.0, float(data['wallet_ada']))
+            if 'wallet_doge' in data:
+                player._wallet_doge = max(0.0, float(data['wallet_doge']))
             
             # Handle inventory
             if 'inventory' in data:
@@ -689,7 +862,8 @@ class _AdminPlayerDetail(Resource):
             
             return {
                 'message': f'Player {user_id} updated',
-                'crypto': player._crypto
+                'crypto': player._crypto,
+                'wallet': player.wallet
             }, 200
             
         except Exception as e:
@@ -711,6 +885,16 @@ class _AdminStats(Resource):
             total_crypto = sum(p._crypto for p in players)
             avg_crypto = total_crypto / total_players if total_players > 0 else 0
             
+            # Sum wallet totals
+            wallet_totals = {
+                'satoshis': total_crypto,
+                'bitcoin': sum(p._wallet_btc or 0 for p in players),
+                'ethereum': sum(p._wallet_eth or 0 for p in players),
+                'solana': sum(p._wallet_sol or 0 for p in players),
+                'cardano': sum(p._wallet_ada or 0 for p in players),
+                'dogecoin': sum(p._wallet_doge or 0 for p in players)
+            }
+            
             # Count minigame completions
             minigame_counts = {
                 'crypto_miner': sum(1 for p in players if p._completed_crypto_miner),
@@ -728,13 +912,15 @@ class _AdminStats(Resource):
                     top_players.append({
                         'uid': getattr(p.user, '_uid', 'unknown'),
                         'name': getattr(p.user, '_name', 'Unknown'),
-                        'crypto': p._crypto
+                        'crypto': p._crypto,
+                        'wallet': p.wallet
                     })
             
             return {
                 'total_players': total_players,
                 'total_crypto_in_circulation': total_crypto,
                 'average_crypto': round(avg_crypto, 2),
+                'wallet_totals': wallet_totals,
                 'minigame_completions': minigame_counts,
                 'top_players': top_players
             }, 200
@@ -754,6 +940,7 @@ class _AdminBulkUpdate(Resource):
             data = request.get_json()
             action = data.get('action')
             amount = data.get('amount', 0)
+            coin = data.get('coin', 'satoshis')
             
             if not action:
                 return {'error': 'Action required'}, 400
@@ -766,6 +953,11 @@ class _AdminBulkUpdate(Resource):
                     player._crypto = max(0, player._crypto + int(amount))
                     affected += 1
             
+            elif action == 'add_coin':
+                for player in players:
+                    player.add_to_wallet(coin, amount)
+                    affected += 1
+            
             elif action == 'set_crypto':
                 for player in players:
                     player._crypto = max(0, int(amount))
@@ -774,6 +966,11 @@ class _AdminBulkUpdate(Resource):
             elif action == 'reset_all':
                 for player in players:
                     player._crypto = 0
+                    player._wallet_btc = 0.0
+                    player._wallet_eth = 0.0
+                    player._wallet_sol = 0.0
+                    player._wallet_ada = 0.0
+                    player._wallet_doge = 0.0
                     player._inventory = '[]'
                     player._scores = '{}'
                     player._completed_ash_trail = False
@@ -799,7 +996,7 @@ class _AdminBulkUpdate(Resource):
 
 
 # ============================================================================
-# SIMPLE ADMIN ENDPOINTS (Alternative - uses existing model methods)
+# SIMPLE ADMIN ENDPOINTS
 # ============================================================================
 
 class _AdminPlayersSimple(Resource):
@@ -863,21 +1060,30 @@ api.add_resource(_CryptoResource, '/crypto')
 api.add_resource(_InventoryResource, '/inventory')
 api.add_resource(_ScoresResource, '/scores')
 api.add_resource(_MinigamesResource, '/minigames')
+api.add_resource(_MinigameRewardResource, '/minigame/reward')
+
+# Wallet endpoints (authenticated)
+api.add_resource(_WalletResource, '/wallet')
+api.add_resource(_WalletAddCoinResource, '/wallet/add')
+api.add_resource(_WalletConvertResource, '/wallet/convert')
 
 # Public endpoints
 api.add_resource(_LeaderboardResource, '/leaderboard')
 api.add_resource(_MinigameLeaderboardResource, '/leaderboard/minigame')
+api.add_resource(_PricesResource, '/prices')
+api.add_resource(_BitcoinBoostResource, '/bitcoin-boost')
+
+# Ash Trail endpoints
 api.add_resource(_AshTrailRunsResource, '/ash-trail/runs')
 api.add_resource(_AshTrailRunDetailResource, '/ash-trail/runs/<int:run_id>')
 api.add_resource(_AshTrailAIResource, '/ash-trail/ai')
-api.add_resource(_BitcoinBoostResource, '/bitcoin-boost')
 
-# Admin endpoints (full featured)
+# Admin endpoints
 api.add_resource(_AdminAllPlayers, '/admin/players')
 api.add_resource(_AdminPlayerDetail, '/admin/player/<string:user_id>')
 api.add_resource(_AdminStats, '/admin/stats')
 api.add_resource(_AdminBulkUpdate, '/admin/bulk')
 
-# Simple admin endpoints (uses model methods directly)
+# Simple admin endpoints
 api.add_resource(_AdminPlayersSimple, '/players')
 api.add_resource(_AdminPlayerSimple, '/player/<string:uid>')
