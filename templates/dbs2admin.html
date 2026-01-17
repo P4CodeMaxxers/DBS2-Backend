@@ -814,7 +814,7 @@ async function saveAshTrailScore() {
         let scores = (existing && existing.scores) ? { ...existing.scores } : null;
 
         if (!scores) {
-            // Fallback: fetch player detail from API
+            // Fallback: fetch player detail from app.api
             const res = await fetch(`${API_BASE}/player/${uid}`);
             const p = await res.json();
             scores = (p && p.scores) ? { ...p.scores } : {};

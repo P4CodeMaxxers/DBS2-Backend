@@ -4,6 +4,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from dotenv import load_dotenv
+from app import cli
 import os
 
 
@@ -131,3 +132,29 @@ app.config['KASM_API_KEY_SECRET'] = os.environ.get('KASM_API_KEY_SECRET') or Non
 #GROQ settings
 app.config['GROQ_API_KEY'] = os.environ.get('GROQ_API_KEY')
 
+from flask import current_app
+
+@app.cli.group()
+def custom():
+    """Custom commands."""
+    pass
+
+@custom.command("generate_data")
+def generate_data():
+    """Generate initial database data."""
+    from app import db
+    from app.models import User  # adjust if your model name differs
+
+    db.create_all()
+
+    if not User.query.first():
+        user = User(
+            username="admin",
+            email="admin@example.com"
+        )
+        user.set_password("password")
+        db.session.add(user)
+        db.session.commit()
+        print("Default user created")
+    else:
+        print("Data already exists")

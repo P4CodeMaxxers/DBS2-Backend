@@ -8,39 +8,39 @@ from flask_login import current_user, login_required
 from flask import current_app
 from werkzeug.security import generate_password_hash
 from dotenv import load_dotenv
-from api.jwt_authorize import token_required
+from app.api.jwt_authorize import token_required
 
 # import "objects" from "this" project
 from __init__ import app, db, login_manager  # Key Flask objects 
 # API endpoints
-from api.user import user_api 
-from api.python_exec_api import python_exec_api
-from api.javascript_exec_api import javascript_exec_api
-from api.section import section_api
-from api.persona_api import persona_api
-from api.pfp import pfp_api
-from api.analytics import analytics_api
-from api.student import student_api
-from api.groq_api import groq_api
-from api.gemini_api import gemini_api
-from api.microblog_api import microblog_api
-from api.classroom_api import classroom_api
+from app.api.user import user_api 
+from app.api.python_exec_api import python_exec_api
+from app.api.javascript_exec_api import javascript_exec_api
+from app.api.section import section_api
+from app.api.persona_api import persona_api
+from app.api.pfp import pfp_api
+from app.api.analytics import analytics_api
+from app.api.student import student_api
+from app.api.groq_api import groq_api
+from app.api.gemini_api import gemini_api
+from app.api.microblog_api import microblog_api
+from app.api.classroom_api import classroom_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from hacks.DBS2endpoint import DBS2_api  # Import the Discord Basement Simulator 2 API blueprint
-from api.post import post_api  # Import the social media post API
-from api.dbs2_api import dbs2_api
+from app.api.post import post_api  # Import the social media post API
+from app.api.dbs2_api import dbs2_api
 from model.dbs2_player import DBS2Player, initDBS2Players
-#from api.announcement import announcement_api ##temporary revert
+#from app.api.announcement import announcement_api ##temporary revert
 
 # database Initialization functions
 from model.user import User, initUsers
 from model.user import Section;
 from model.github import GitHubUser
 from model.feedback import Feedback
-from api.analytics import get_date_range
-# from api.grade_api import grade_api
-from api.study import study_api
-from api.feedback_api import feedback_api
+from app.api.analytics import get_date_range
+# from app.api.grade_api import grade_api
+from app.api.study import study_api
+from app.api.feedback_api import feedback_api
 from model.study import Study, initStudies
 from model.classroom import Classroom
 from model.persona import Persona, initPersonas, initPersonaUsers
