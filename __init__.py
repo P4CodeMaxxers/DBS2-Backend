@@ -13,9 +13,12 @@ load_dotenv()
 
 # Setup of key Flask object (app)
 
+# Use relative instance path when running locally, /app/instance when in Docker
+instance_path = os.environ.get('INSTANCE_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+
 app = Flask(
     __name__,
-    instance_path="/app/instance",
+    instance_path=instance_path,
     instance_relative_config=True
 )
 
