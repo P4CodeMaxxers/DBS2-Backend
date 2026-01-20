@@ -13,7 +13,13 @@ load_dotenv()
 
 
 # Setup of key Flask object (app)
-app = Flask(__name__, instance_path="/app/instance", instance_relative_config=True)
+import os
+
+app = Flask(
+    __name__,
+    instance_path=os.path.join(os.getcwd(), "instance"),
+    instance_relative_config=True
+)
 
 # Configure Flask Port, default to 8403 which is same as Docker setup
 app.config['FLASK_PORT'] = int(os.environ.get('FLASK_PORT') or 8403)
@@ -139,22 +145,4 @@ def custom():
     """Custom commands."""
     pass
 
-@custom.command("generate_data")
-def generate_data():
-    """Generate initial database data."""
-    from app import db
-    from app.models import User  # adjust if your model name differs
 
-    db.create_all()
-
-    if not User.query.first():
-        user = User(
-            username="admin",
-            email="admin@example.com"
-        )
-        user.set_password("password")
-        db.session.add(user)
-        db.session.commit()
-        print("Default user created")
-    else:
-        print("Data already exists")
