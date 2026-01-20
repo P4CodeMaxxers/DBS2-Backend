@@ -19,7 +19,7 @@ from model.dbs2_player import DBS2Player
 from model.user import User
 from model.ashtrail_run import AshTrailRun
 from __init__ import db
-from app.api.jwt_authorize import token_required
+from api.jwt_authorize import token_required
 
 # Create Blueprint
 dbs2_api = Blueprint('dbs2_api', __name__, url_prefix='/api/dbs2')

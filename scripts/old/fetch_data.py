@@ -3,7 +3,7 @@ import json
 
 url = "https://devops.nighthawkcodingsociety.com/api/users/2025"
 
-# Fetch data from app.api
+# Fetch data from api
 response = requests.get(url)
 
 if response.status_code == 200:

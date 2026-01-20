@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_restful import Api, Resource
-from app.api.authorize import auth_required
+from api.authorize import auth_required
 from model.persona import Persona
 from __init__ import db
 
