@@ -15,11 +15,7 @@ load_dotenv()
 # Setup of key Flask object (app)
 import os
 
-app = Flask(
-    __name__,
-    instance_path=os.path.join(os.getcwd(), "instance"),
-    instance_relative_config=True
-)
+from app import app
 
 # Configure Flask Port, default to 8403 which is same as Docker setup
 app.config['FLASK_PORT'] = int(os.environ.get('FLASK_PORT') or 8403)
