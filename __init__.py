@@ -4,7 +4,6 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from dotenv import load_dotenv
-from app import cli
 import os
 
 
@@ -13,9 +12,12 @@ load_dotenv()
 
 
 # Setup of key Flask object (app)
-import os
 
-from app import app
+app = Flask(
+    __name__,
+    instance_path="/app/instance",
+    instance_relative_config=True
+)
 
 # Configure Flask Port, default to 8403 which is same as Docker setup
 app.config['FLASK_PORT'] = int(os.environ.get('FLASK_PORT') or 8403)
