@@ -373,7 +373,8 @@ class UserAPI:
                                 secure=True,
                                 httponly=True,
                                 path='/',
-                                samesite='None'
+                                samesite='None',
+                                domain='.opencodingsociety.com'  # ADDED: Domain for cross-subdomain support
                             )
                         else:
                             resp.set_cookie(
@@ -429,7 +430,8 @@ class UserAPI:
                         secure=True,
                         httponly=True,
                         path='/',
-                        samesite='None'
+                        samesite='None',
+                        domain='.opencodingsociety.com'  # ADDED: Domain for cross-subdomain support
                     )
                 else:
                     resp.set_cookie(
