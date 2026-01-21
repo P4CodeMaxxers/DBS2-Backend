@@ -172,7 +172,7 @@ api.add_resource(_PasswordRotate, '/passwords/rotate', '/passwords/rotate/')
 
 
 if __name__ == "__main__": 
-    server = 'https://flask.opencodingsociety.com'
+    server = 'https://dbs2.opencodingsociety.com'
     url = server + "/api/DBS2"
     
     # Test get passwords

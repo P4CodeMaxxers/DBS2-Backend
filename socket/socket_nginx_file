@@ -1,10 +1,10 @@
   server {
       listen 80;
       listen [::]:80;
-      server_name flask.opencodingsociety.com;
+      server_name fldbs2ask.opencodingsociety.com;
 
       location / {
-          proxy_pass http://localhost:8087;
+          proxy_pass http://localhost:8403;
 
           # Preflighted requests
           if ($request_method = OPTIONS) {

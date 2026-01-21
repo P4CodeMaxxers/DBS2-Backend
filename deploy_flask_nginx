@@ -1,7 +1,7 @@
 server {
     listen 80;
     listen [::]:80;
-    server_name flask.opencodingsociety.com;
+    server_name dbs2.opencodingsociety.com;
 
     # Proxy Socket.IO connections to 8403
     location /socket.io/ {
