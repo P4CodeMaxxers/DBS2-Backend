@@ -365,9 +365,10 @@ class UserAPI:
                         resp = jsonify(response_data)
                         
                         # Set cookie
+                        cookie_name = current_app.config["JWT_TOKEN_NAME"]
                         if is_production:
                             resp.set_cookie(
-                                current_app.config["JWT_TOKEN_NAME"],
+                                cookie_name,
                                 token,
                                 max_age=43200,  # 12 hours in seconds
                                 secure=True,
@@ -376,17 +377,21 @@ class UserAPI:
                                 samesite='None'
                                 # No domain parameter - allows cross-origin
                             )
+                            print(f"[PRODUCTION] Cookie '{cookie_name}' set with: secure=True, httponly=False, samesite=None, path=/")
                         else:
                             resp.set_cookie(
-                                current_app.config["JWT_TOKEN_NAME"],
+                                cookie_name,
                                 token,
                                 max_age=43200,  # 12 hours in seconds
                                 secure=False,
-                                httponly=False,  # Set to True for more security if JS access not needed
+                                httponly=False,
                                 path='/',
                                 samesite='Lax'
                             )
-                        print(f"Token set: {token}")
+                            print(f"[LOCALHOST] Cookie '{cookie_name}' set with: secure=False, httponly=False, samesite=Lax, path=/")
+                        print(f"Token set for user {user._uid}: {token[:20]}...")
+                        print(f"Request origin: {request.headers.get('Origin')}")
+                        print(f"Request host: {request.host}")
                         return resp 
                     except Exception as e:
                         return {
