@@ -22,7 +22,14 @@ def token_required(roles=None):
     def decorator(func_to_guard):
         @wraps(func_to_guard)
         def decorated(*args, **kwargs):
-            token = request.cookies.get(current_app.config["JWT_TOKEN_NAME"])
+            # Try to get token from Authorization header first
+            auth_header = request.headers.get('Authorization')
+            if auth_header and auth_header.startswith('Bearer '):
+                token = auth_header.split(' ')[1]
+            else:
+                # Fall back to cookie
+                token = request.cookies.get(current_app.config["JWT_TOKEN_NAME"])
+            
             if not token:
                 return {
                     "message": "Authentication Token is missing!",
