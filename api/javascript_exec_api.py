@@ -15,8 +15,11 @@ class JavaScriptExec(Resource):
         if not code.strip():
             return {"output": "⚠️ No code provided."}, 400
 
+        # Prepend strict mode to enforce proper variable declarations
+        strict_code = '"use strict";\n' + code
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".js") as tmp:
-            tmp.write(code.encode())
+            tmp.write(strict_code.encode())
             tmp.flush()
 
             try:
@@ -26,7 +29,7 @@ class JavaScriptExec(Resource):
                     text=True,
                     timeout=5,
                     cwd="/tmp",  # Force working directory to /tmp
-                    env={"HOME": "/tmp", "PATH": "/usr/bin:/usr/local/bin"}  # Restricted environment
+                    env={"HOME": "/tmp", "PATH": "/opt/homebrew/bin:/usr/bin:/usr/local/bin"}  # Restricted environment (includes macOS Homebrew path)
                 )
                 output = result.stdout + result.stderr
             except subprocess.TimeoutExpired:
