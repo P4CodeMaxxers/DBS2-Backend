@@ -49,7 +49,7 @@ cors = CORS(
        'https://pages.opencodingsociety.com',
        'https://p4codemaxxers.github.io'
    ],
-   methods=["GET", "POST", "PUT", "OPTIONS"]
+   methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]  # Added DELETE
 )
 
 
@@ -76,6 +76,10 @@ app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_NAME
 app.config['JWT_TOKEN_NAME'] = JWT_TOKEN_NAME
 
+# Cross-origin cookie support for authentication
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 # Database settings
 dbName = 'user_management'
