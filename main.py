@@ -25,6 +25,7 @@ from api.groq_api import groq_api
 from api.gemini_api import gemini_api
 from api.microblog_api import microblog_api
 from api.classroom_api import classroom_api
+from api.data_export_import_api import data_export_import_api
 from hacks.joke import joke_api  # Import the joke API blueprint
 from hacks.DBS2endpoint import DBS2_api  # Import the Discord Basement Simulator 2 API blueprint
 from api.post import post_api  # Import the social media post API
@@ -81,6 +82,7 @@ app.register_blueprint(student_api)
 app.register_blueprint(study_api)
 app.register_blueprint(classroom_api)
 app.register_blueprint(feedback_api)
+app.register_blueprint(data_export_import_api)  # Register the data export/import API
 app.register_blueprint(joke_api)  # Register the joke API blueprint
 app.register_blueprint(DBS2_api)  # Register the Discord Basement Simulator 2 API blueprint
 app.register_blueprint(dbs2_api) # dbs2 database API

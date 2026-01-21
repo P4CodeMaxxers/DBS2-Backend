@@ -74,9 +74,19 @@ def main():
     # Step 1: Build New schema and create test data 
     try:
         with app.app_context():
+            # Disable foreign key checks for MySQL (no effect on SQLite)
+            if db.engine.url.drivername in ['mysql', 'mysql+pymysql']:
+                db.session.execute(db.text('SET FOREIGN_KEY_CHECKS=0;'))
+                db.session.commit()
+            
             # Drop all the tables defined in the project
             db.drop_all()
             print("All tables dropped.")
+            
+            # Re-enable foreign key checks for MySQL
+            if db.engine.url.drivername in ['mysql', 'mysql+pymysql']:
+                db.session.execute(db.text('SET FOREIGN_KEY_CHECKS=1;'))
+                db.session.commit()
             
             # Create all tables
             db.create_all()

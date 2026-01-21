@@ -86,6 +86,7 @@ pip install -r requirements.txt
   KASM_API_KEY_SECRET=xxxx
   KASM_API_KEY=xxx
   # DB Configuration, AWS RDS
+  IS_PRODUCTION=false # false = LOCAL true = DEPLOYED
   DB_USERNAME='admin'
   DB_PASSWORD='xxxxx'
   ```
