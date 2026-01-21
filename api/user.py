@@ -371,10 +371,10 @@ class UserAPI:
                                 token,
                                 max_age=43200,  # 12 hours in seconds
                                 secure=True,
-                                httponly=True,
+                                httponly=False,  # Must be False for cross-origin
                                 path='/',
-                                samesite='None',
-                                domain='.opencodingsociety.com'  # ADDED: Domain for cross-subdomain support
+                                samesite='None'
+                                # No domain parameter - allows cross-origin
                             )
                         else:
                             resp.set_cookie(
@@ -428,10 +428,10 @@ class UserAPI:
                         token,
                         max_age=0,  # Immediately expire the cookie
                         secure=True,
-                        httponly=True,
+                        httponly=False,  # Must be False for cross-origin
                         path='/',
-                        samesite='None',
-                        domain='.opencodingsociety.com'  # ADDED: Domain for cross-subdomain support
+                        samesite='None'
+                        # No domain parameter - allows cross-origin
                     )
                 else:
                     resp.set_cookie(
