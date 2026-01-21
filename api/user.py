@@ -352,9 +352,10 @@ class UserAPI:
                         # Return JSON response with cookie
                         is_production = not (request.host.startswith('localhost') or request.host.startswith('127.0.0.1'))
                         
-                        # Create JSON response
+                        # Create JSON response with token included
                         response_data = {
                             "message": f"Authentication for {user._uid} successful",
+                            "token": token,  # ADDED: Include token in response body
                             "user": {
                                 "uid": user._uid,
                                 "name": user.name,
@@ -364,29 +365,27 @@ class UserAPI:
                         }
                         resp = jsonify(response_data)
                         
-                        # Set cookie
+                        # Still set cookie for backward compatibility
                         if is_production:
                             resp.set_cookie(
                                 current_app.config["JWT_TOKEN_NAME"],
                                 token,
-                                max_age=43200,  # 12 hours in seconds
+                                max_age=43200,
                                 secure=True,
-                                httponly=False,  # Must be False for cross-origin
+                                httponly=False,
                                 path='/',
                                 samesite='None'
-                                # No domain parameter - allows cross-origin
                             )
                         else:
                             resp.set_cookie(
                                 current_app.config["JWT_TOKEN_NAME"],
                                 token,
-                                max_age=43200,  # 12 hours in seconds
+                                max_age=43200,
                                 secure=False,
-                                httponly=False,  # Set to True for more security if JS access not needed
+                                httponly=False,
                                 path='/',
                                 samesite='Lax'
                             )
-                        print(f"Token set: {token}")
                         return resp 
                     except Exception as e:
                         return {
