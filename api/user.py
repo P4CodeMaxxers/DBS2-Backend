@@ -1,7 +1,7 @@
 import jwt
 from flask import Blueprint, app, request, jsonify, current_app, Response, g
 from flask_restful import Api, Resource # used for REST API building
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from __init__ import app, db
 from api.jwt_authorize import token_required
 from model.user import User
@@ -344,8 +344,13 @@ class UserAPI:
                 # Check if user is found
                 if user:
                     try:
+                        from datetime import datetime, timedelta, timezone
+
                         token = jwt.encode(
-                            {"_uid": user._uid},
+                            {
+                                "_uid": user._uid,
+                                "exp": datetime.now(timezone.utc) + timedelta(hours=12)
+                            },
                             current_app.config["SECRET_KEY"],
                             algorithm="HS256"
                         )
