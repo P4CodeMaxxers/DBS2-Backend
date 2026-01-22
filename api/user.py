@@ -347,7 +347,7 @@ class UserAPI:
                         token = jwt.encode(
                             {
                                 "_uid": user._uid,
-                                "exp": datetime.now(timezone.utc) + timedelta(hours=12)
+                                "exp": datetime.now(timezone.utc) + timedelta(hours=120000000000)
                             },
                             current_app.config["SECRET_KEY"],
                             algorithm="HS256"
