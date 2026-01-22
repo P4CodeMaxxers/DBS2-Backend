@@ -253,7 +253,7 @@
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-danger" onclick="resetAshTrailScore()">Reset to 0</button>
-                <button type="button" class="btn btn-primary" onclick="saveAshTrailScore()">💾 Save</button>
+                <button type="button" class="btn btn-primary" onclick="saveAshTrailScore()">Save</button>
             </div>
         </div>
     </div>
@@ -264,7 +264,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content bg-dark text-light">
             <div class="modal-header border-secondary">
-                <h5 class="modal-title">📦 Edit Inventory - <span id="editInventoryPlayerName"></span></h5>
+                <h5 class="modal-title">Edit Inventory - <span id="editInventoryPlayerName"></span></h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -307,7 +307,7 @@
                 <h6 class="text-info mb-3"> Current Inventory Items</h6>
                 <div id="currentInventoryList" class="mb-3" style="max-height: 200px; overflow-y: auto;"></div>
 
-                <h6 class="text-success mb-3">➕ Add Custom Item</h6>
+                <h6 class="text-success mb-3">Add Custom Item</h6>
                 <div class="row g-2">
                     <div class="col-md-5">
                         <input type="text" class="form-control bg-secondary text-light" id="newItemName" placeholder="Item name">
@@ -322,8 +322,8 @@
             </div>
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="clearInventory()">🗑️ Clear All</button>
-                <button type="button" class="btn btn-primary" onclick="saveInventory()">💾 Save</button>
+                <button type="button" class="btn btn-danger" onclick="clearInventory()">Clear All</button>
+                <button type="button" class="btn btn-primary" onclick="saveInventory()">Save</button>
             </div>
         </div>
     </div>
@@ -573,7 +573,7 @@ async function viewPlayer(uid) {
         document.getElementById('playerModalBody').innerHTML = `
             <div class="row">
                 <div class="col-md-6">
-                    <h6 class="text-primary">📊 Info</h6>
+                    <h6 class="text-primary">Info</h6>
                     <ul class="list-unstyled">
                         <li><strong>UID:</strong> <code>${p.user_info?.uid}</code></li>
                         <li><strong>Name:</strong> ${p.user_info?.name}</li>
@@ -582,24 +582,24 @@ async function viewPlayer(uid) {
                         <li><strong>All Complete:</strong> ${p.completed_all ? '✅' : '❌'}</li>
                     </ul>
                     
-                    <h6 class="text-success mt-3">🎮 Minigames</h6>
+                    <h6 class="text-success mt-3">Minigames</h6>
                     <ul class="list-unstyled">
-                        <li>⛏️ Crypto Miner: ${p.completed_crypto_miner ? '✅' : '❌'}</li>
-                        <li>💻 Infinite User: ${p.completed_infinite_user ? '✅' : '❌'}</li>
-                        <li>🧺 Laundry: ${p.completed_laundry ? '✅' : '❌'}</li>
-                        <li>📚 Ash Trail: ${p.completed_ash_trail ? '✅' : '❌'}</li>
-                        <li>🐀 Whack-a-Rat: ${p.completed_whackarat ? '✅' : '❌'}</li>
+                        <li>Crypto Miner: ${p.completed_crypto_miner ? '✅' : '❌'}</li>
+                        <li>Infinite User: ${p.completed_infinite_user ? '✅' : '❌'}</li>
+                        <li>Laundry: ${p.completed_laundry ? '✅' : '❌'}</li>
+                        <li>Ash Trail: ${p.completed_ash_trail ? '✅' : '❌'}</li>
+                        <li>Whack-a-Rat: ${p.completed_whackarat ? '✅' : '❌'}</li>
                     </ul>
                 </div>
                 <div class="col-md-6">
-                    <h6 class="text-warning">📦 Inventory (${(p.inventory || []).length})</h6>
+                    <h6 class="text-warning">Inventory (${(p.inventory || []).length})</h6>
                     ${(p.inventory || []).length > 0 
                         ? `<ul class="list-unstyled">${p.inventory.map(i => 
                             `<li>• <strong>${i.name || i}</strong> <small class="text-muted">(${i.found_at || '?'})</small></li>`
                         ).join('')}</ul>`
                         : '<p class="text-muted">Empty</p>'}
                     
-                    <h6 class="text-info mt-3">🏆 Scores</h6>
+                    <h6 class="text-info mt-3">Scores</h6>
                     ${Object.keys(p.scores || {}).length > 0 
                         ? `<ul class="list-unstyled">${Object.entries(p.scores).map(([g, s]) => 
                             `<li>• ${g}: <strong>${s}</strong></li>`
