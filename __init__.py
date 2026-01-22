@@ -69,7 +69,7 @@ app.config['DEFAULT_PFP'] = os.environ.get('DEFAULT_PFP') or 'default.png'
 
 
 # Browser settings
-SECRET_KEY = os.environ.get('SECRET_KEY') or 'SECRET_KEY' # secret key for session management
+SECRET_KEY = os.environ.get('SECRET_KEY') # secret key for session management
 SESSION_COOKIE_NAME = os.environ.get('SESSION_COOKIE_NAME') or 'sess_python_flask'
 JWT_TOKEN_NAME = os.environ.get('JWT_TOKEN_NAME') or 'jwt_python_flask'
 app.config['SECRET_KEY'] = SECRET_KEY
