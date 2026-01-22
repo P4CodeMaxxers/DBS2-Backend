@@ -91,6 +91,16 @@ _price_cache = {
     'cache_duration': timedelta(minutes=2)
 }
 
+# Fallback prices (approximate, updated manually if needed)
+FALLBACK_PRICES = {
+    'bitcoin': {'usd': 45000, 'change_24h': 0},
+    'ethereum': {'usd': 2500, 'change_24h': 0},
+    'solana': {'usd': 100, 'change_24h': 0},
+    'cardano': {'usd': 0.5, 'change_24h': 0},
+    'dogecoin': {'usd': 0.08, 'change_24h': 0},
+    'satoshis': {'usd': 0.00045, 'change_24h': 0}
+}
+
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -134,10 +144,14 @@ def fetch_coin_prices():
             'vs_currencies': 'usd',
             'include_24hr_change': 'true'
         }
-        response = requests.get(url, params=params, timeout=5)
+        print(f'[DBS2] Fetching prices from CoinGecko for: {coin_ids}')
+        response = requests.get(url, params=params, timeout=10)
+        
+        print(f'[DBS2] CoinGecko response status: {response.status_code}')
         
         if response.status_code == 200:
             data = response.json()
+            print(f'[DBS2] CoinGecko response data: {data}')
             prices = {}
             
             for coin_id, info in SUPPORTED_COINS.items():
@@ -150,20 +164,54 @@ def fetch_coin_prices():
                 elif coin_id == 'satoshis':
                     # Satoshis = 1/100,000,000 of Bitcoin
                     btc_price = data.get('bitcoin', {}).get('usd', 0)
-                    prices['satoshis'] = {
-                        'usd': btc_price / 100_000_000,
-                        'change_24h': data.get('bitcoin', {}).get('usd_24h_change', 0)
-                    }
+                    if btc_price > 0:
+                        prices['satoshis'] = {
+                            'usd': btc_price / 100_000_000,
+                            'change_24h': data.get('bitcoin', {}).get('usd_24h_change', 0)
+                        }
             
-            _price_cache['prices'] = prices
-            _price_cache['last_fetch'] = now
-            return prices
+            # Only cache if we got valid prices
+            if prices:
+                _price_cache['prices'] = prices
+                _price_cache['last_fetch'] = now
+                print(f'[DBS2] Successfully fetched prices for {len(prices)} coins')
+                return prices
+            else:
+                print('[DBS2] Warning: No valid prices fetched from CoinGecko')
+        else:
+            print(f'[DBS2] CoinGecko API returned status {response.status_code}: {response.text[:200]}')
             
+    except requests.exceptions.Timeout:
+        print('[DBS2] Price fetch timeout - CoinGecko API not responding')
+    except requests.exceptions.ConnectionError as e:
+        print(f'[DBS2] Price fetch connection error: {e}')
     except Exception as e:
         print(f'[DBS2] Price fetch error: {e}')
+        import traceback
+        traceback.print_exc()
     
-    # Return cached or empty
-    return _price_cache['prices'] or {}
+    # Return cached prices if available, even if stale
+    if _price_cache['prices']:
+        print(f'[DBS2] Using cached prices (last fetched: {_price_cache["last_fetch"]})')
+        return _price_cache['prices']
+    
+    # Last resort: use fallback prices
+    print('[DBS2] Warning: Using fallback prices (CoinGecko unavailable)')
+    fallback = {}
+    for coin_id, info in SUPPORTED_COINS.items():
+        if coin_id == 'satoshis':
+            fallback['satoshis'] = FALLBACK_PRICES['satoshis']
+        else:
+            cg_id = info['coingecko_id']
+            if cg_id and cg_id in FALLBACK_PRICES:
+                fallback[coin_id] = FALLBACK_PRICES[cg_id]
+    
+    print(f'[DBS2] Fallback prices generated: {list(fallback.keys())}')
+    if fallback:
+        # Cache the fallback prices so we don't keep trying CoinGecko
+        _price_cache['prices'] = fallback
+        _price_cache['last_fetch'] = now
+    return fallback
 
 
 def calculate_sats_per_coin(coin_id, prices):
@@ -173,10 +221,19 @@ def calculate_sats_per_coin(coin_id, prices):
     if coin_id == 'bitcoin':
         return 100_000_000
     
-    btc_price = prices.get('bitcoin', {}).get('usd', 1)
+    if not prices:
+        print(f'[DBS2] calculate_sats_per_coin: No prices dict provided for {coin_id}')
+        return 0
+    
+    btc_price = prices.get('bitcoin', {}).get('usd', 0)
     coin_price = prices.get(coin_id, {}).get('usd', 0)
     
-    if btc_price <= 0 or coin_price <= 0:
+    if btc_price <= 0:
+        print(f'[DBS2] calculate_sats_per_coin: Invalid BTC price: {btc_price}')
+        return 0
+    
+    if coin_price <= 0:
+        print(f'[DBS2] calculate_sats_per_coin: Invalid {coin_id} price: {coin_price}')
         return 0
     
     return int((coin_price / btc_price) * 100_000_000)
@@ -364,11 +421,31 @@ class _WalletConvertResource(Resource):
         
         # Get prices and calculate conversion
         prices = fetch_coin_prices()
+        
+        # Debug: Log prices
+        print(f'[DBS2] Conversion request - from: {from_coin}, to: {to_coin}, amount: {amount}')
+        print(f'[DBS2] Prices available: {list(prices.keys()) if prices else "NONE"}')
+        
+        # Check if we have prices for the coins we need
+        if not prices:
+            print(f'[DBS2] Error: No prices available for conversion')
+            return {'error': 'Price data unavailable. Please try again in a moment.'}, 400
+        
+        # Check if we have prices for both coins
+        if from_coin not in prices or to_coin not in prices:
+            print(f'[DBS2] Error: Missing prices - from_coin: {from_coin in prices}, to_coin: {to_coin in prices}')
+            return {'error': f'Price data unavailable for {from_coin} or {to_coin}. Please try again in a moment.'}, 400
+        
         from_sats = calculate_sats_per_coin(from_coin, prices)
         to_sats = calculate_sats_per_coin(to_coin, prices)
         
         if from_sats <= 0 or to_sats <= 0:
-            return {'error': 'Cannot determine conversion rate'}, 400
+            # More detailed error message
+            from_price = prices.get(from_coin, {}).get('usd', 0)
+            to_price = prices.get(to_coin, {}).get('usd', 0)
+            btc_price = prices.get('bitcoin', {}).get('usd', 0)
+            print(f'[DBS2] Conversion failed - from_coin: {from_coin} (price: {from_price}), to_coin: {to_coin} (price: {to_price}), btc_price: {btc_price}')
+            return {'error': f'Cannot determine conversion rate. Prices: {from_coin}=${from_price}, {to_coin}=${to_price}'}, 400
         
         # Calculate: amount * from_rate / to_rate * (1 - fee)
         sats_value = amount * from_sats
@@ -634,6 +711,12 @@ class _MinigameLeaderboardResource(Resource):
         if not game:
             return {'error': 'Game parameter required'}, 400
         
+        # Check if this is an ash_trail game
+        is_ash_trail = game.startswith('ash_trail_')
+        book_id = None
+        if is_ash_trail:
+            book_id = game.replace('ash_trail_', '', 1)  # Remove 'ash_trail_' prefix
+        
         # Get all players with scores
         players = DBS2Player.query.all()
         
@@ -647,11 +730,40 @@ class _MinigameLeaderboardResource(Resource):
                         'uid': getattr(player.user, '_uid', None),
                         'name': getattr(player.user, '_name', None)
                     }
-                entries.append({
+                
+                entry = {
                     'user_info': user_info,
                     'score': scores[game],
                     'game': game
-                })
+                }
+                
+                # For ash_trail games, find the best run_id for this player/book/score
+                if is_ash_trail and book_id and player.user:
+                    try:
+                        # First try to find a run with the exact score (best match)
+                        best_run = AshTrailRun.query.filter_by(
+                            user_id=player.user.id,
+                            book_id=book_id
+                        ).filter(
+                            AshTrailRun.score == scores[game]
+                        ).order_by(AshTrailRun.created_at.desc()).first()
+                        
+                        # If no exact match, find the best run for this player/book (highest score)
+                        if not best_run:
+                            best_run = AshTrailRun.query.filter_by(
+                                user_id=player.user.id,
+                                book_id=book_id
+                            ).order_by(AshTrailRun.score.desc(), AshTrailRun.created_at.desc()).first()
+                        
+                        if best_run:
+                            entry['run_id'] = best_run.id
+                        else:
+                            entry['run_id'] = None
+                    except Exception as e:
+                        print(f'[DBS2] Error finding run_id for {game}: {e}')
+                        entry['run_id'] = None
+                
+                entries.append(entry)
         
         # Sort by score descending
         entries.sort(key=lambda x: x['score'], reverse=True)
