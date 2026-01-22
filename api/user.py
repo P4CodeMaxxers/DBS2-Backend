@@ -344,8 +344,6 @@ class UserAPI:
                 # Check if user is found
                 if user:
                     try:
-                        from datetime import datetime, timedelta, timezone
-
                         token = jwt.encode(
                             {
                                 "_uid": user._uid,
