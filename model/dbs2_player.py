@@ -224,6 +224,9 @@ class DBS2Player(db.Model):
             self._completed_laundry = bool(data['completed_laundry'])
         if 'completed_ash_trail' in data:
             self._completed_ash_trail = bool(data['completed_ash_trail'])
+        # Accept both 'cryptochecker' (frontend) and 'whackarat' (legacy)
+        if 'completed_cryptochecker' in data:
+            self._completed_whackarat = bool(data['completed_cryptochecker'])
         if 'completed_whackarat' in data:
             self._completed_whackarat = bool(data['completed_whackarat'])
         
@@ -268,7 +271,8 @@ class DBS2Player(db.Model):
             'completed_infinite_user': self._completed_infinite_user,
             'completed_laundry': self._completed_laundry,
             'completed_ash_trail': self._completed_ash_trail,
-            'completed_whackarat': self._completed_whackarat,
+            'completed_cryptochecker': self._completed_whackarat,  # Frontend name
+            'completed_whackarat': self._completed_whackarat,      # Legacy for backwards compat
             'completed_all': self._completed_all,
             'has_seen_intro': self._has_seen_intro,
             'created_at': self.created_at.isoformat() if self.created_at else None,

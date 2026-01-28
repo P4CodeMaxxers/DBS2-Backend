@@ -287,7 +287,7 @@
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_laundry">
-                            <label class="form-check-label" for="scrap_laundry">Laundry</label>
+                            <label class="form-check-label" for="scrap_laundry">📋 Transaction Validator</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
@@ -298,8 +298,8 @@
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="scrap_whackarat">
-                            <label class="form-check-label" for="scrap_whackarat">Whack-a-Rat</label>
+                            <input class="form-check-input" type="checkbox" id="scrap_cryptochecker">
+                            <label class="form-check-label" for="scrap_cryptochecker">CryptoChecker (Security)</label>
                         </div>
                     </div>
                 </div>
@@ -541,7 +541,7 @@ function countScraps(p) {
         p.completed_infinite_user || mg.infinite_user,
         p.completed_laundry || mg.laundry,
         p.completed_ash_trail || mg.ash_trail,
-        p.completed_whackarat || mg.whackarat
+        p.completed_cryptochecker || p.completed_whackarat || mg.cryptochecker || mg.whackarat
     ].filter(Boolean).length;
 }
 
@@ -550,9 +550,9 @@ function renderMinigameBadges(p) {
     const games = [
         { key: 'crypto_miner', field: 'completed_crypto_miner', icon: '⛏️' },
         { key: 'infinite_user', field: 'completed_infinite_user', icon: '💻' },
-        { key: 'laundry', field: 'completed_laundry', icon: '🧺' },
+        { key: 'laundry', field: 'completed_laundry', icon: '📋' },
         { key: 'ash_trail', field: 'completed_ash_trail', icon: '📚' },
-        { key: 'whackarat', field: 'completed_whackarat', icon: '🐀' }
+        { key: 'cryptochecker', field: 'completed_cryptochecker', icon: '🔐' }
     ];
     
     return games.map(g => {
@@ -586,9 +586,9 @@ async function viewPlayer(uid) {
                     <ul class="list-unstyled">
                         <li>Crypto Miner: ${p.completed_crypto_miner ? '✅' : '❌'}</li>
                         <li>Infinite User: ${p.completed_infinite_user ? '✅' : '❌'}</li>
-                        <li>Laundry: ${p.completed_laundry ? '✅' : '❌'}</li>
+                        <li>Transaction Validator: ${p.completed_laundry ? '✅' : '❌'}</li>
                         <li>Ash Trail: ${p.completed_ash_trail ? '✅' : '❌'}</li>
-                        <li>Whack-a-Rat: ${p.completed_whackarat ? '✅' : '❌'}</li>
+                        <li>CryptoChecker: ${p.completed_cryptochecker || p.completed_whackarat ? '✅' : '❌'}</li>
                     </ul>
                 </div>
                 <div class="col-md-6">
@@ -686,7 +686,7 @@ async function openEditInventory(uid, name) {
         document.getElementById('scrap_infinite_user').checked = p.completed_infinite_user || false;
         document.getElementById('scrap_laundry').checked = p.completed_laundry || false;
         document.getElementById('scrap_ash_trail').checked = p.completed_ash_trail || false;
-        document.getElementById('scrap_whackarat').checked = p.completed_whackarat || false;
+        document.getElementById('scrap_cryptochecker').checked = p.completed_cryptochecker || p.completed_whackarat || false;
         
         renderInventoryList();
         new bootstrap.Modal(document.getElementById('editInventoryModal')).show();
@@ -741,7 +741,7 @@ async function saveInventory() {
         completed_infinite_user: document.getElementById('scrap_infinite_user').checked,
         completed_laundry: document.getElementById('scrap_laundry').checked,
         completed_ash_trail: document.getElementById('scrap_ash_trail').checked,
-        completed_whackarat: document.getElementById('scrap_whackarat').checked
+        completed_cryptochecker: document.getElementById('scrap_cryptochecker').checked
     };
     
     try {

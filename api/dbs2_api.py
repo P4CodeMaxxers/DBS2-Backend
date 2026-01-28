@@ -77,9 +77,11 @@ SUPPORTED_COINS = {
 }
 
 # Minigame to coin mapping
+# Note: 'cryptochecker' replaces 'whackarat' in frontend, but DB field is still _completed_whackarat
 MINIGAME_COINS = {
     'crypto_miner': 'satoshis',
-    'whackarat': 'dogecoin',
+    'cryptochecker': 'dogecoin',  # Frontend name (maps to _completed_whackarat in DB)
+    'whackarat': 'dogecoin',      # Legacy name for backwards compatibility
     'laundry': 'cardano',
     'ash_trail': 'solana',
     'infinite_user': 'ethereum'
@@ -106,12 +108,14 @@ def get_current_player():
 
 def format_minigames(player):
     """Convert individual completion fields to dict format for API response"""
+    # Note: DB field is _completed_whackarat but we expose as 'cryptochecker' to frontend
     return {
         'crypto_miner': player._completed_crypto_miner,
         'infinite_user': player._completed_infinite_user,
         'laundry': player._completed_laundry,
         'ash_trail': player._completed_ash_trail,
-        'whackarat': player._completed_whackarat
+        'cryptochecker': player._completed_whackarat,  # Frontend name
+        'whackarat': player._completed_whackarat       # Legacy for backwards compat
     }
 
 
@@ -548,12 +552,14 @@ class _MinigamesResource(Resource):
         data = request.get_json()
         
         # Map API names to model field names
+        # 'cryptochecker' maps to the same DB field as 'whackarat' for backwards compat
         field_map = {
             'crypto_miner': 'completed_crypto_miner',
             'infinite_user': 'completed_infinite_user',
             'laundry': 'completed_laundry',
             'ash_trail': 'completed_ash_trail',
-            'whackarat': 'completed_whackarat'
+            'cryptochecker': 'completed_whackarat',  # Frontend name
+            'whackarat': 'completed_whackarat'       # Legacy name
         }
         
         update_data = {}
@@ -618,7 +624,8 @@ class _LeaderboardResource(Resource):
                 'infinite_user': entry.get('completed_infinite_user', False),
                 'laundry': entry.get('completed_laundry', False),
                 'ash_trail': entry.get('completed_ash_trail', False),
-                'whackarat': entry.get('completed_whackarat', False)
+                'cryptochecker': entry.get('completed_whackarat', False),  # Frontend name
+                'whackarat': entry.get('completed_whackarat', False)       # Legacy
             }
         
         return {'leaderboard': leaderboard}, 200
@@ -911,7 +918,8 @@ class _AdminStats(Resource):
                 'infinite_user': sum(1 for p in players if p._completed_infinite_user),
                 'laundry': sum(1 for p in players if p._completed_laundry),
                 'ash_trail': sum(1 for p in players if p._completed_ash_trail),
-                'whackarat': sum(1 for p in players if p._completed_whackarat)
+                'cryptochecker': sum(1 for p in players if p._completed_whackarat),  # Frontend name
+                'whackarat': sum(1 for p in players if p._completed_whackarat)       # Legacy
             }
             
             # Top players
@@ -1099,6 +1107,9 @@ class _AdminPlayerSimple(Resource):
                 player._completed_laundry = bool(data['completed_laundry'])
             if 'completed_ash_trail' in data:
                 player._completed_ash_trail = bool(data['completed_ash_trail'])
+            # Accept both 'cryptochecker' (frontend) and 'whackarat' (legacy)
+            if 'completed_cryptochecker' in data:
+                player._completed_whackarat = bool(data['completed_cryptochecker'])
             if 'completed_whackarat' in data:
                 player._completed_whackarat = bool(data['completed_whackarat'])
             
@@ -1129,32 +1140,64 @@ class _AdminPlayerSimple(Resource):
 # SHOP ENDPOINTS
 # ============================================================================
 
-# Shop item definitions - must match frontend ClosetShop.js
+# Shop item definitions - MUST match frontend ClosetShop.js
+# Uses frontend naming convention (code_scrap_*) and story-based names
 SHOP_ITEMS = {
+    'code_scrap_crypto_miner': {
+        'name': 'Mining Algorithm Code Scrap',
+        'price_coin': 'ethereum',
+        'price_amount': 0.001
+    },
+    'code_scrap_laundry': {
+        'name': 'Transaction Ledger Code Scrap',
+        'price_coin': 'cardano',
+        'price_amount': 50
+    },
+    'code_scrap_cryptochecker': {
+        'name': 'Security Keys Code Scrap',
+        'price_coin': 'dogecoin',
+        'price_amount': 100
+    },
+    'code_scrap_ash_trail': {
+        'name': 'Backup Documentation Code Scrap',
+        'price_coin': 'solana',
+        'price_amount': 0.5
+    },
+    'code_scrap_infinite_user': {
+        'name': 'Master Password List Code Scrap',
+        'price_coin': 'ethereum',
+        'price_amount': 0.0015
+    },
+    # Legacy names for backwards compatibility
     'scrap_crypto_miner': {
-        'name': 'Code Scrap: Crypto Miner',
-        'price_coin': 'satoshis',
-        'price_amount': 500
+        'name': 'Mining Algorithm Code Scrap',
+        'price_coin': 'ethereum',
+        'price_amount': 0.001
     },
     'scrap_whackarat': {
-        'name': 'Code Scrap: Whack-a-Rat',
+        'name': 'Security Keys Code Scrap',
         'price_coin': 'dogecoin',
-        'price_amount': 10
+        'price_amount': 100
+    },
+    'scrap_cryptochecker': {
+        'name': 'Security Keys Code Scrap',
+        'price_coin': 'dogecoin',
+        'price_amount': 100
     },
     'scrap_laundry': {
-        'name': 'Code Scrap: Laundry',
+        'name': 'Transaction Ledger Code Scrap',
         'price_coin': 'cardano',
-        'price_amount': 5
+        'price_amount': 50
     },
     'scrap_ash_trail': {
-        'name': 'Code Scrap: Ash Trail',
+        'name': 'Backup Documentation Code Scrap',
         'price_coin': 'solana',
-        'price_amount': 0.05
+        'price_amount': 0.5
     },
     'scrap_infinite_user': {
-        'name': 'Code Scrap: Infinite User',
+        'name': 'Master Password List Code Scrap',
         'price_coin': 'ethereum',
-        'price_amount': 0.0005
+        'price_amount': 0.0015
     }
 }
 
