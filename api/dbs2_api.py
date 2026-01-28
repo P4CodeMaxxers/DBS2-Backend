@@ -13,6 +13,7 @@ from flask import Blueprint, request, g
 from flask_restful import Api, Resource
 from datetime import datetime, timedelta
 import requests
+import json
 
 # Import your models and decorators
 from model.dbs2_player import DBS2Player
@@ -91,16 +92,6 @@ _price_cache = {
     'cache_duration': timedelta(minutes=2)
 }
 
-# Fallback prices (approximate, updated manually if needed)
-FALLBACK_PRICES = {
-    'bitcoin': {'usd': 45000, 'change_24h': 0},
-    'ethereum': {'usd': 2500, 'change_24h': 0},
-    'solana': {'usd': 100, 'change_24h': 0},
-    'cardano': {'usd': 0.5, 'change_24h': 0},
-    'dogecoin': {'usd': 0.08, 'change_24h': 0},
-    'satoshis': {'usd': 0.00045, 'change_24h': 0}
-}
-
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -144,14 +135,10 @@ def fetch_coin_prices():
             'vs_currencies': 'usd',
             'include_24hr_change': 'true'
         }
-        print(f'[DBS2] Fetching prices from CoinGecko for: {coin_ids}')
-        response = requests.get(url, params=params, timeout=10)
-        
-        print(f'[DBS2] CoinGecko response status: {response.status_code}')
+        response = requests.get(url, params=params, timeout=5)
         
         if response.status_code == 200:
             data = response.json()
-            print(f'[DBS2] CoinGecko response data: {data}')
             prices = {}
             
             for coin_id, info in SUPPORTED_COINS.items():
@@ -164,54 +151,20 @@ def fetch_coin_prices():
                 elif coin_id == 'satoshis':
                     # Satoshis = 1/100,000,000 of Bitcoin
                     btc_price = data.get('bitcoin', {}).get('usd', 0)
-                    if btc_price > 0:
-                        prices['satoshis'] = {
-                            'usd': btc_price / 100_000_000,
-                            'change_24h': data.get('bitcoin', {}).get('usd_24h_change', 0)
-                        }
+                    prices['satoshis'] = {
+                        'usd': btc_price / 100_000_000,
+                        'change_24h': data.get('bitcoin', {}).get('usd_24h_change', 0)
+                    }
             
-            # Only cache if we got valid prices
-            if prices:
-                _price_cache['prices'] = prices
-                _price_cache['last_fetch'] = now
-                print(f'[DBS2] Successfully fetched prices for {len(prices)} coins')
-                return prices
-            else:
-                print('[DBS2] Warning: No valid prices fetched from CoinGecko')
-        else:
-            print(f'[DBS2] CoinGecko API returned status {response.status_code}: {response.text[:200]}')
+            _price_cache['prices'] = prices
+            _price_cache['last_fetch'] = now
+            return prices
             
-    except requests.exceptions.Timeout:
-        print('[DBS2] Price fetch timeout - CoinGecko API not responding')
-    except requests.exceptions.ConnectionError as e:
-        print(f'[DBS2] Price fetch connection error: {e}')
     except Exception as e:
         print(f'[DBS2] Price fetch error: {e}')
-        import traceback
-        traceback.print_exc()
     
-    # Return cached prices if available, even if stale
-    if _price_cache['prices']:
-        print(f'[DBS2] Using cached prices (last fetched: {_price_cache["last_fetch"]})')
-        return _price_cache['prices']
-    
-    # Last resort: use fallback prices
-    print('[DBS2] Warning: Using fallback prices (CoinGecko unavailable)')
-    fallback = {}
-    for coin_id, info in SUPPORTED_COINS.items():
-        if coin_id == 'satoshis':
-            fallback['satoshis'] = FALLBACK_PRICES['satoshis']
-        else:
-            cg_id = info['coingecko_id']
-            if cg_id and cg_id in FALLBACK_PRICES:
-                fallback[coin_id] = FALLBACK_PRICES[cg_id]
-    
-    print(f'[DBS2] Fallback prices generated: {list(fallback.keys())}')
-    if fallback:
-        # Cache the fallback prices so we don't keep trying CoinGecko
-        _price_cache['prices'] = fallback
-        _price_cache['last_fetch'] = now
-    return fallback
+    # Return cached or empty
+    return _price_cache['prices'] or {}
 
 
 def calculate_sats_per_coin(coin_id, prices):
@@ -221,19 +174,10 @@ def calculate_sats_per_coin(coin_id, prices):
     if coin_id == 'bitcoin':
         return 100_000_000
     
-    if not prices:
-        print(f'[DBS2] calculate_sats_per_coin: No prices dict provided for {coin_id}')
-        return 0
-    
-    btc_price = prices.get('bitcoin', {}).get('usd', 0)
+    btc_price = prices.get('bitcoin', {}).get('usd', 1)
     coin_price = prices.get(coin_id, {}).get('usd', 0)
     
-    if btc_price <= 0:
-        print(f'[DBS2] calculate_sats_per_coin: Invalid BTC price: {btc_price}')
-        return 0
-    
-    if coin_price <= 0:
-        print(f'[DBS2] calculate_sats_per_coin: Invalid {coin_id} price: {coin_price}')
+    if btc_price <= 0 or coin_price <= 0:
         return 0
     
     return int((coin_price / btc_price) * 100_000_000)
@@ -421,31 +365,11 @@ class _WalletConvertResource(Resource):
         
         # Get prices and calculate conversion
         prices = fetch_coin_prices()
-        
-        # Debug: Log prices
-        print(f'[DBS2] Conversion request - from: {from_coin}, to: {to_coin}, amount: {amount}')
-        print(f'[DBS2] Prices available: {list(prices.keys()) if prices else "NONE"}')
-        
-        # Check if we have prices for the coins we need
-        if not prices:
-            print(f'[DBS2] Error: No prices available for conversion')
-            return {'error': 'Price data unavailable. Please try again in a moment.'}, 400
-        
-        # Check if we have prices for both coins
-        if from_coin not in prices or to_coin not in prices:
-            print(f'[DBS2] Error: Missing prices - from_coin: {from_coin in prices}, to_coin: {to_coin in prices}')
-            return {'error': f'Price data unavailable for {from_coin} or {to_coin}. Please try again in a moment.'}, 400
-        
         from_sats = calculate_sats_per_coin(from_coin, prices)
         to_sats = calculate_sats_per_coin(to_coin, prices)
         
         if from_sats <= 0 or to_sats <= 0:
-            # More detailed error message
-            from_price = prices.get(from_coin, {}).get('usd', 0)
-            to_price = prices.get(to_coin, {}).get('usd', 0)
-            btc_price = prices.get('bitcoin', {}).get('usd', 0)
-            print(f'[DBS2] Conversion failed - from_coin: {from_coin} (price: {from_price}), to_coin: {to_coin} (price: {to_price}), btc_price: {btc_price}')
-            return {'error': f'Cannot determine conversion rate. Prices: {from_coin}=${from_price}, {to_coin}=${to_price}'}, 400
+            return {'error': 'Cannot determine conversion rate'}, 400
         
         # Calculate: amount * from_rate / to_rate * (1 - fee)
         sats_value = amount * from_sats
@@ -711,12 +635,6 @@ class _MinigameLeaderboardResource(Resource):
         if not game:
             return {'error': 'Game parameter required'}, 400
         
-        # Check if this is an ash_trail game
-        is_ash_trail = game.startswith('ash_trail_')
-        book_id = None
-        if is_ash_trail:
-            book_id = game.replace('ash_trail_', '', 1)  # Remove 'ash_trail_' prefix
-        
         # Get all players with scores
         players = DBS2Player.query.all()
         
@@ -730,40 +648,11 @@ class _MinigameLeaderboardResource(Resource):
                         'uid': getattr(player.user, '_uid', None),
                         'name': getattr(player.user, '_name', None)
                     }
-                
-                entry = {
+                entries.append({
                     'user_info': user_info,
                     'score': scores[game],
                     'game': game
-                }
-                
-                # For ash_trail games, find the best run_id for this player/book/score
-                if is_ash_trail and book_id and player.user:
-                    try:
-                        # First try to find a run with the exact score (best match)
-                        best_run = AshTrailRun.query.filter_by(
-                            user_id=player.user.id,
-                            book_id=book_id
-                        ).filter(
-                            AshTrailRun.score == scores[game]
-                        ).order_by(AshTrailRun.created_at.desc()).first()
-                        
-                        # If no exact match, find the best run for this player/book (highest score)
-                        if not best_run:
-                            best_run = AshTrailRun.query.filter_by(
-                                user_id=player.user.id,
-                                book_id=book_id
-                            ).order_by(AshTrailRun.score.desc(), AshTrailRun.created_at.desc()).first()
-                        
-                        if best_run:
-                            entry['run_id'] = best_run.id
-                        else:
-                            entry['run_id'] = None
-                    except Exception as e:
-                        print(f'[DBS2] Error finding run_id for {game}: {e}')
-                        entry['run_id'] = None
-                
-                entries.append(entry)
+                })
         
         # Sort by score descending
         entries.sort(key=lambda x: x['score'], reverse=True)
@@ -921,12 +810,12 @@ class _AdminPlayerDetail(Resource):
             if not player:
                 return {'error': 'Player not found'}, 404
             
-            data = request.get_json()
+            data = request.get_json() or {}
             
-            # Handle crypto
+            # Handle crypto/satoshis
             if 'crypto' in data:
                 player._crypto = max(0, int(data['crypto']))
-            elif 'add_crypto' in data:
+            if 'add_crypto' in data:
                 player._crypto = max(0, player._crypto + int(data['add_crypto']))
             
             # Handle wallet coins
@@ -941,25 +830,35 @@ class _AdminPlayerDetail(Resource):
             if 'wallet_doge' in data:
                 player._wallet_doge = max(0.0, float(data['wallet_doge']))
             
-            # Handle inventory
+            # Handle inventory (store as JSON string or list)
             if 'inventory' in data:
-                player.inventory = data['inventory']
+                inv = data['inventory']
+                if isinstance(inv, list):
+                    # json imported at top
+                    player._inventory = json.dumps(inv)
+                else:
+                    player._inventory = inv
             
-            # Handle scores
+            # Handle scores (store as JSON string or dict)
             if 'scores' in data:
-                player.scores = data['scores']
+                scores = data['scores']
+                if isinstance(scores, dict):
+                    # json imported at top
+                    player._scores = json.dumps(scores)
+                else:
+                    player._scores = scores
             
             # Handle minigame completions
             if 'completed_crypto_miner' in data:
-                player._completed_crypto_miner = data['completed_crypto_miner']
+                player._completed_crypto_miner = bool(data['completed_crypto_miner'])
             if 'completed_infinite_user' in data:
-                player._completed_infinite_user = data['completed_infinite_user']
+                player._completed_infinite_user = bool(data['completed_infinite_user'])
             if 'completed_laundry' in data:
-                player._completed_laundry = data['completed_laundry']
+                player._completed_laundry = bool(data['completed_laundry'])
             if 'completed_ash_trail' in data:
-                player._completed_ash_trail = data['completed_ash_trail']
+                player._completed_ash_trail = bool(data['completed_ash_trail'])
             if 'completed_whackarat' in data:
-                player._completed_whackarat = data['completed_whackarat']
+                player._completed_whackarat = bool(data['completed_whackarat'])
             
             # Update completed_all
             player._completed_all = (
@@ -974,8 +873,7 @@ class _AdminPlayerDetail(Resource):
             
             return {
                 'message': f'Player {user_id} updated',
-                'crypto': player._crypto,
-                'wallet': player.wallet
+                'player': player.read()
             }, 200
             
         except Exception as e:
@@ -1144,7 +1042,7 @@ class _AdminPlayerSimple(Resource):
             return {'error': str(e)}, 500
     
     def put(self, uid):
-        """PUT /api/dbs2/player/<uid>"""
+        """PUT /api/dbs2/player/<uid> - Update player data"""
         try:
             user = User.query.filter_by(_uid=uid).first()
             if not user:
@@ -1154,11 +1052,236 @@ class _AdminPlayerSimple(Resource):
             if not player:
                 return {'error': 'Player not found'}, 404
             
-            data = request.get_json()
-            player.update(data)
-            return player.read(), 200
+            data = request.get_json() or {}
+            
+            # Handle crypto/satoshis
+            if 'crypto' in data:
+                player._crypto = max(0, int(data['crypto']))
+            if 'add_crypto' in data:
+                player._crypto = max(0, player._crypto + int(data['add_crypto']))
+            
+            # Handle wallet coins
+            if 'wallet_btc' in data:
+                player._wallet_btc = max(0.0, float(data['wallet_btc']))
+            if 'wallet_eth' in data:
+                player._wallet_eth = max(0.0, float(data['wallet_eth']))
+            if 'wallet_sol' in data:
+                player._wallet_sol = max(0.0, float(data['wallet_sol']))
+            if 'wallet_ada' in data:
+                player._wallet_ada = max(0.0, float(data['wallet_ada']))
+            if 'wallet_doge' in data:
+                player._wallet_doge = max(0.0, float(data['wallet_doge']))
+            
+            # Handle inventory (store as JSON string or list)
+            if 'inventory' in data:
+                inv = data['inventory']
+                if isinstance(inv, list):
+                    # json imported at top
+                    player._inventory = json.dumps(inv)
+                else:
+                    player._inventory = inv
+            
+            # Handle scores (store as JSON string or dict)
+            if 'scores' in data:
+                scores = data['scores']
+                if isinstance(scores, dict):
+                    # json imported at top
+                    player._scores = json.dumps(scores)
+                else:
+                    player._scores = scores
+            
+            # Handle minigame completions
+            if 'completed_crypto_miner' in data:
+                player._completed_crypto_miner = bool(data['completed_crypto_miner'])
+            if 'completed_infinite_user' in data:
+                player._completed_infinite_user = bool(data['completed_infinite_user'])
+            if 'completed_laundry' in data:
+                player._completed_laundry = bool(data['completed_laundry'])
+            if 'completed_ash_trail' in data:
+                player._completed_ash_trail = bool(data['completed_ash_trail'])
+            if 'completed_whackarat' in data:
+                player._completed_whackarat = bool(data['completed_whackarat'])
+            
+            # Update completed_all flag
+            player._completed_all = (
+                player._completed_ash_trail and
+                player._completed_crypto_miner and
+                player._completed_whackarat and
+                player._completed_laundry and
+                player._completed_infinite_user
+            )
+            
+            db.session.commit()
+            
+            return {
+                'message': f'Player {uid} updated successfully',
+                'player': player.read()
+            }, 200
+            
         except Exception as e:
             db.session.rollback()
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e)}, 500
+
+
+# ============================================================================
+# SHOP ENDPOINTS
+# ============================================================================
+
+# Shop item definitions - must match frontend ClosetShop.js
+SHOP_ITEMS = {
+    'scrap_crypto_miner': {
+        'name': 'Code Scrap: Crypto Miner',
+        'price_coin': 'satoshis',
+        'price_amount': 500
+    },
+    'scrap_whackarat': {
+        'name': 'Code Scrap: Whack-a-Rat',
+        'price_coin': 'dogecoin',
+        'price_amount': 10
+    },
+    'scrap_laundry': {
+        'name': 'Code Scrap: Laundry',
+        'price_coin': 'cardano',
+        'price_amount': 5
+    },
+    'scrap_ash_trail': {
+        'name': 'Code Scrap: Ash Trail',
+        'price_coin': 'solana',
+        'price_amount': 0.05
+    },
+    'scrap_infinite_user': {
+        'name': 'Code Scrap: Infinite User',
+        'price_coin': 'ethereum',
+        'price_amount': 0.0005
+    }
+}
+
+class _ShopPurchaseResource(Resource):
+    """Handle shop purchases"""
+    
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/shop/purchase - Buy an item from the shop"""
+        try:
+            player = get_current_player()
+            if not player:
+                return {'error': 'Player not found'}, 404
+            
+            data = request.get_json() or {}
+            item_id = data.get('item_id')
+            
+            # Validate item exists
+            if item_id not in SHOP_ITEMS:
+                return {'error': 'Invalid item'}, 400
+            
+            item = SHOP_ITEMS[item_id]
+            price_coin = item['price_coin']
+            price_amount = item['price_amount']
+            
+            # Check if player already owns this scrap
+            inventory = player.inventory if hasattr(player, 'inventory') else []
+            if isinstance(inventory, str):
+                try:
+                    inventory = json.loads(inventory) if inventory else []
+                except:
+                    inventory = []
+            
+            for inv_item in inventory:
+                inv_name = inv_item.get('name') if isinstance(inv_item, dict) else inv_item
+                if inv_name == item['name']:
+                    return {'error': 'You already own this item'}, 400
+            
+            # Get player's balance for the required coin
+            coin_field = SUPPORTED_COINS.get(price_coin, {}).get('field')
+            if not coin_field:
+                return {'error': 'Invalid coin type'}, 400
+            
+            current_balance = getattr(player, coin_field, 0) or 0
+            
+            # Check if player can afford
+            if current_balance < price_amount:
+                return {
+                    'error': f'Insufficient {price_coin}. Need {price_amount}, have {current_balance}'
+                }, 400
+            
+            # Deduct the price
+            new_balance = current_balance - price_amount
+            setattr(player, coin_field, new_balance)
+            
+            # Add item to inventory
+            new_item = {
+                'name': item['name'],
+                'found_at': 'Closet Shop',
+                'acquired_at': datetime.now().isoformat()
+            }
+            inventory.append(new_item)
+            
+            # Save inventory
+            if hasattr(player, '_inventory'):
+                player._inventory = json.dumps(inventory)
+            
+            db.session.commit()
+            
+            return {
+                'success': True,
+                'message': f"Purchased {item['name']}",
+                'item': new_item,
+                'new_balance': new_balance,
+                'coin': price_coin
+            }, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e)}, 500
+
+
+class _ShopItemsResource(Resource):
+    """Get available shop items"""
+    
+    @token_required()
+    def get(self):
+        """GET /api/dbs2/shop/items - Get shop items with ownership status"""
+        try:
+            player = get_current_player()
+            if not player:
+                return {'error': 'Player not found'}, 404
+            
+            # Get player inventory
+            inventory = player.inventory if hasattr(player, 'inventory') else []
+            if isinstance(inventory, str):
+                try:
+                    inventory = json.loads(inventory) if inventory else []
+                except:
+                    inventory = []
+            
+            owned_names = set()
+            for inv_item in inventory:
+                inv_name = inv_item.get('name') if isinstance(inv_item, dict) else inv_item
+                owned_names.add(inv_name)
+            
+            # Build response with ownership status
+            items = []
+            for item_id, item in SHOP_ITEMS.items():
+                coin_config = SUPPORTED_COINS.get(item['price_coin'], {})
+                coin_field = coin_config.get('field', '_crypto')
+                balance = getattr(player, coin_field, 0) or 0
+                
+                items.append({
+                    'id': item_id,
+                    'name': item['name'],
+                    'price_coin': item['price_coin'],
+                    'price_amount': item['price_amount'],
+                    'owned': item['name'] in owned_names,
+                    'can_afford': balance >= item['price_amount']
+                })
+            
+            return {'items': items}, 200
+            
+        except Exception as e:
             return {'error': str(e)}, 500
 
 
@@ -1178,6 +1301,10 @@ api.add_resource(_MinigameRewardResource, '/minigame/reward')
 api.add_resource(_WalletResource, '/wallet')
 api.add_resource(_WalletAddCoinResource, '/wallet/add')
 api.add_resource(_WalletConvertResource, '/wallet/convert')
+
+# Shop endpoints (authenticated)
+api.add_resource(_ShopPurchaseResource, '/shop/purchase')
+api.add_resource(_ShopItemsResource, '/shop/items')
 
 # Public endpoints
 api.add_resource(_LeaderboardResource, '/leaderboard')
