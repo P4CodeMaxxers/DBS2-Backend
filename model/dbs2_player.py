@@ -1,6 +1,13 @@
 """
-DBS2 Player Model - Original structure with multi-coin wallet support
+DBS2 Player Model - With code scrap ownership fields
 Place this in: model/dbs2_player.py
+
+MIGRATION REQUIRED: Run this SQL to add new scrap columns:
+ALTER TABLE dbs2_players ADD COLUMN _scrap_crypto_miner BOOLEAN DEFAULT FALSE;
+ALTER TABLE dbs2_players ADD COLUMN _scrap_whackarat BOOLEAN DEFAULT FALSE;
+ALTER TABLE dbs2_players ADD COLUMN _scrap_laundry BOOLEAN DEFAULT FALSE;
+ALTER TABLE dbs2_players ADD COLUMN _scrap_ash_trail BOOLEAN DEFAULT FALSE;
+ALTER TABLE dbs2_players ADD COLUMN _scrap_infinite_user BOOLEAN DEFAULT FALSE;
 """
 
 from __init__ import app, db
@@ -13,7 +20,8 @@ class DBS2Player(db.Model):
     """
     DBS2 Player model with:
     - user_id foreign key to User
-    - Individual completion fields for each minigame
+    - Individual completion fields for each minigame (_completed_*)
+    - Code scrap ownership fields (_scrap_*) - purchased from shop
     - _crypto for main satoshi balance
     - Multi-coin wallet balances (BTC, ETH, SOL, ADA, DOGE)
     - JSON fields for inventory and scores
@@ -40,13 +48,20 @@ class DBS2Player(db.Model):
     _inventory = db.Column(db.Text, default='[]')
     _scores = db.Column(db.Text, default='{}')
     
-    # Individual minigame completion flags
+    # Individual minigame completion flags (playing the minigame)
     _completed_crypto_miner = db.Column(db.Boolean, default=False)
     _completed_infinite_user = db.Column(db.Boolean, default=False)
     _completed_laundry = db.Column(db.Boolean, default=False)
     _completed_ash_trail = db.Column(db.Boolean, default=False)
     _completed_whackarat = db.Column(db.Boolean, default=False)
     _completed_all = db.Column(db.Boolean, default=False)
+    
+    # Code scrap ownership flags (purchased from Closet Shop)
+    _scrap_crypto_miner = db.Column(db.Boolean, default=False)
+    _scrap_whackarat = db.Column(db.Boolean, default=False)    # Security/CryptoChecker scrap
+    _scrap_laundry = db.Column(db.Boolean, default=False)      # Transaction Validator scrap
+    _scrap_ash_trail = db.Column(db.Boolean, default=False)
+    _scrap_infinite_user = db.Column(db.Boolean, default=False)
     
     # Intro tracking
     _has_seen_intro = db.Column(db.Boolean, default=False)
@@ -68,12 +83,20 @@ class DBS2Player(db.Model):
         self._wallet_doge = 0.0
         self._inventory = '[]'
         self._scores = '{}'
+        # Minigame completions
         self._completed_crypto_miner = False
         self._completed_infinite_user = False
         self._completed_laundry = False
         self._completed_ash_trail = False
         self._completed_whackarat = False
         self._completed_all = False
+        # Code scrap ownership
+        self._scrap_crypto_miner = False
+        self._scrap_whackarat = False
+        self._scrap_laundry = False
+        self._scrap_ash_trail = False
+        self._scrap_infinite_user = False
+        # Intro
         self._has_seen_intro = False
     
     # ==================== WALLET PROPERTIES ====================
@@ -114,6 +137,61 @@ class DBS2Player(db.Model):
         
         db.session.commit()
         return True
+    
+    # ==================== SCRAP OWNERSHIP ====================
+    
+    @property
+    def scraps_owned(self):
+        """Get dictionary of scrap ownership status"""
+        return {
+            'crypto_miner': self._scrap_crypto_miner or False,
+            'whackarat': self._scrap_whackarat or False,
+            'laundry': self._scrap_laundry or False,
+            'ash_trail': self._scrap_ash_trail or False,
+            'infinite_user': self._scrap_infinite_user or False
+        }
+    
+    def owns_scrap(self, scrap_id):
+        """Check if player owns a specific scrap"""
+        field_map = {
+            'scrap_crypto_miner': '_scrap_crypto_miner',
+            'scrap_whackarat': '_scrap_whackarat',
+            'scrap_laundry': '_scrap_laundry',
+            'scrap_ash_trail': '_scrap_ash_trail',
+            'scrap_infinite_user': '_scrap_infinite_user',
+            # Also allow without prefix
+            'crypto_miner': '_scrap_crypto_miner',
+            'whackarat': '_scrap_whackarat',
+            'laundry': '_scrap_laundry',
+            'ash_trail': '_scrap_ash_trail',
+            'infinite_user': '_scrap_infinite_user'
+        }
+        field = field_map.get(scrap_id)
+        if field:
+            return getattr(self, field, False) or False
+        return False
+    
+    def set_scrap_owned(self, scrap_id, owned=True):
+        """Set ownership status for a scrap"""
+        field_map = {
+            'scrap_crypto_miner': '_scrap_crypto_miner',
+            'scrap_whackarat': '_scrap_whackarat',
+            'scrap_laundry': '_scrap_laundry',
+            'scrap_ash_trail': '_scrap_ash_trail',
+            'scrap_infinite_user': '_scrap_infinite_user',
+            # Also allow without prefix
+            'crypto_miner': '_scrap_crypto_miner',
+            'whackarat': '_scrap_whackarat',
+            'laundry': '_scrap_laundry',
+            'ash_trail': '_scrap_ash_trail',
+            'infinite_user': '_scrap_infinite_user'
+        }
+        field = field_map.get(scrap_id)
+        if field:
+            setattr(self, field, bool(owned))
+            db.session.commit()
+            return True
+        return False
     
     # ==================== INVENTORY PROPERTY ====================
     
@@ -224,11 +302,20 @@ class DBS2Player(db.Model):
             self._completed_laundry = bool(data['completed_laundry'])
         if 'completed_ash_trail' in data:
             self._completed_ash_trail = bool(data['completed_ash_trail'])
-        # Accept both 'cryptochecker' (frontend) and 'whackarat' (legacy)
-        if 'completed_cryptochecker' in data:
-            self._completed_whackarat = bool(data['completed_cryptochecker'])
         if 'completed_whackarat' in data:
             self._completed_whackarat = bool(data['completed_whackarat'])
+        
+        # Code scrap ownership
+        if 'scrap_crypto_miner' in data:
+            self._scrap_crypto_miner = bool(data['scrap_crypto_miner'])
+        if 'scrap_whackarat' in data:
+            self._scrap_whackarat = bool(data['scrap_whackarat'])
+        if 'scrap_laundry' in data:
+            self._scrap_laundry = bool(data['scrap_laundry'])
+        if 'scrap_ash_trail' in data:
+            self._scrap_ash_trail = bool(data['scrap_ash_trail'])
+        if 'scrap_infinite_user' in data:
+            self._scrap_infinite_user = bool(data['scrap_infinite_user'])
         
         # Update completed_all flag
         self._completed_all = (
@@ -267,13 +354,21 @@ class DBS2Player(db.Model):
             'wallet': self.wallet,
             'inventory': self.inventory,
             'scores': self.scores,
+            # Minigame completions
             'completed_crypto_miner': self._completed_crypto_miner,
             'completed_infinite_user': self._completed_infinite_user,
             'completed_laundry': self._completed_laundry,
             'completed_ash_trail': self._completed_ash_trail,
-            'completed_cryptochecker': self._completed_whackarat,  # Frontend name
-            'completed_whackarat': self._completed_whackarat,      # Legacy for backwards compat
+            'completed_whackarat': self._completed_whackarat,
             'completed_all': self._completed_all,
+            # Code scrap ownership (NEW)
+            'scrap_crypto_miner': self._scrap_crypto_miner or False,
+            'scrap_whackarat': self._scrap_whackarat or False,
+            'scrap_laundry': self._scrap_laundry or False,
+            'scrap_ash_trail': self._scrap_ash_trail or False,
+            'scrap_infinite_user': self._scrap_infinite_user or False,
+            'scraps_owned': self.scraps_owned,
+            # Other
             'has_seen_intro': self._has_seen_intro,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None

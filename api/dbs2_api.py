@@ -1,10 +1,11 @@
 """
-DBS2 Game API - Complete Backend with Wallet Support
+DBS2 Game API - Complete Backend with Wallet Support and Scrap Ownership
 Place this in: api/dbs2_api.py
 
 Works with the DBS2Player model structure that has:
 - user_id (not _uid)
 - Individual _completed_* fields (not _minigames_completed dict)
+- Individual _scrap_* fields for code scrap ownership (purchased from shop)
 - Multi-coin wallet (_wallet_btc, _wallet_eth, _wallet_sol, _wallet_ada, _wallet_doge)
 - read(), get_all_players(), get_leaderboard() methods
 """
@@ -77,11 +78,9 @@ SUPPORTED_COINS = {
 }
 
 # Minigame to coin mapping
-# Note: 'cryptochecker' replaces 'whackarat' in frontend, but DB field is still _completed_whackarat
 MINIGAME_COINS = {
     'crypto_miner': 'satoshis',
-    'cryptochecker': 'dogecoin',  # Frontend name (maps to _completed_whackarat in DB)
-    'whackarat': 'dogecoin',      # Legacy name for backwards compatibility
+    'whackarat': 'dogecoin',
     'laundry': 'cardano',
     'ash_trail': 'solana',
     'infinite_user': 'ethereum'
@@ -108,14 +107,23 @@ def get_current_player():
 
 def format_minigames(player):
     """Convert individual completion fields to dict format for API response"""
-    # Note: DB field is _completed_whackarat but we expose as 'cryptochecker' to frontend
     return {
         'crypto_miner': player._completed_crypto_miner,
         'infinite_user': player._completed_infinite_user,
         'laundry': player._completed_laundry,
         'ash_trail': player._completed_ash_trail,
-        'cryptochecker': player._completed_whackarat,  # Frontend name
-        'whackarat': player._completed_whackarat       # Legacy for backwards compat
+        'whackarat': player._completed_whackarat
+    }
+
+
+def format_scraps_owned(player):
+    """Convert individual scrap ownership fields to dict format for API response"""
+    return {
+        'crypto_miner': getattr(player, '_scrap_crypto_miner', False) or False,
+        'whackarat': getattr(player, '_scrap_whackarat', False) or False,
+        'laundry': getattr(player, '_scrap_laundry', False) or False,
+        'ash_trail': getattr(player, '_scrap_ash_trail', False) or False,
+        'infinite_user': getattr(player, '_scrap_infinite_user', False) or False
     }
 
 
@@ -552,14 +560,12 @@ class _MinigamesResource(Resource):
         data = request.get_json()
         
         # Map API names to model field names
-        # 'cryptochecker' maps to the same DB field as 'whackarat' for backwards compat
         field_map = {
             'crypto_miner': 'completed_crypto_miner',
             'infinite_user': 'completed_infinite_user',
             'laundry': 'completed_laundry',
             'ash_trail': 'completed_ash_trail',
-            'cryptochecker': 'completed_whackarat',  # Frontend name
-            'whackarat': 'completed_whackarat'       # Legacy name
+            'whackarat': 'completed_whackarat'
         }
         
         update_data = {}
@@ -624,8 +630,7 @@ class _LeaderboardResource(Resource):
                 'infinite_user': entry.get('completed_infinite_user', False),
                 'laundry': entry.get('completed_laundry', False),
                 'ash_trail': entry.get('completed_ash_trail', False),
-                'cryptochecker': entry.get('completed_whackarat', False),  # Frontend name
-                'whackarat': entry.get('completed_whackarat', False)       # Legacy
+                'whackarat': entry.get('completed_whackarat', False)
             }
         
         return {'leaderboard': leaderboard}, 200
@@ -759,6 +764,7 @@ class _AdminAllPlayers(Resource):
             for player in players:
                 data = player.read()
                 data['minigames_completed'] = format_minigames(player)
+                data['scraps_owned'] = format_scraps_owned(player)
                 result.append(data)
             
             # Sort by crypto descending
@@ -795,6 +801,7 @@ class _AdminPlayerDetail(Resource):
             
             data = player.read()
             data['minigames_completed'] = format_minigames(player)
+            data['scraps_owned'] = format_scraps_owned(player)
             return data, 200
             
         except Exception as e:
@@ -841,7 +848,6 @@ class _AdminPlayerDetail(Resource):
             if 'inventory' in data:
                 inv = data['inventory']
                 if isinstance(inv, list):
-                    # json imported at top
                     player._inventory = json.dumps(inv)
                 else:
                     player._inventory = inv
@@ -850,7 +856,6 @@ class _AdminPlayerDetail(Resource):
             if 'scores' in data:
                 scores = data['scores']
                 if isinstance(scores, dict):
-                    # json imported at top
                     player._scores = json.dumps(scores)
                 else:
                     player._scores = scores
@@ -866,6 +871,18 @@ class _AdminPlayerDetail(Resource):
                 player._completed_ash_trail = bool(data['completed_ash_trail'])
             if 'completed_whackarat' in data:
                 player._completed_whackarat = bool(data['completed_whackarat'])
+            
+            # Handle scrap ownership (NEW)
+            if 'scrap_crypto_miner' in data:
+                player._scrap_crypto_miner = bool(data['scrap_crypto_miner'])
+            if 'scrap_whackarat' in data:
+                player._scrap_whackarat = bool(data['scrap_whackarat'])
+            if 'scrap_laundry' in data:
+                player._scrap_laundry = bool(data['scrap_laundry'])
+            if 'scrap_ash_trail' in data:
+                player._scrap_ash_trail = bool(data['scrap_ash_trail'])
+            if 'scrap_infinite_user' in data:
+                player._scrap_infinite_user = bool(data['scrap_infinite_user'])
             
             # Update completed_all
             player._completed_all = (
@@ -918,8 +935,16 @@ class _AdminStats(Resource):
                 'infinite_user': sum(1 for p in players if p._completed_infinite_user),
                 'laundry': sum(1 for p in players if p._completed_laundry),
                 'ash_trail': sum(1 for p in players if p._completed_ash_trail),
-                'cryptochecker': sum(1 for p in players if p._completed_whackarat),  # Frontend name
-                'whackarat': sum(1 for p in players if p._completed_whackarat)       # Legacy
+                'whackarat': sum(1 for p in players if p._completed_whackarat)
+            }
+            
+            # Count scrap ownership
+            scrap_counts = {
+                'crypto_miner': sum(1 for p in players if getattr(p, '_scrap_crypto_miner', False)),
+                'whackarat': sum(1 for p in players if getattr(p, '_scrap_whackarat', False)),
+                'laundry': sum(1 for p in players if getattr(p, '_scrap_laundry', False)),
+                'ash_trail': sum(1 for p in players if getattr(p, '_scrap_ash_trail', False)),
+                'infinite_user': sum(1 for p in players if getattr(p, '_scrap_infinite_user', False))
             }
             
             # Top players
@@ -940,6 +965,7 @@ class _AdminStats(Resource):
                 'average_crypto': round(avg_crypto, 2),
                 'wallet_totals': wallet_totals,
                 'minigame_completions': minigame_counts,
+                'scrap_ownership': scrap_counts,
                 'top_players': top_players
             }, 200
             
@@ -997,6 +1023,17 @@ class _AdminBulkUpdate(Resource):
                     player._completed_laundry = False
                     player._completed_infinite_user = False
                     player._completed_all = False
+                    # Also reset scraps
+                    if hasattr(player, '_scrap_crypto_miner'):
+                        player._scrap_crypto_miner = False
+                    if hasattr(player, '_scrap_whackarat'):
+                        player._scrap_whackarat = False
+                    if hasattr(player, '_scrap_laundry'):
+                        player._scrap_laundry = False
+                    if hasattr(player, '_scrap_ash_trail'):
+                        player._scrap_ash_trail = False
+                    if hasattr(player, '_scrap_infinite_user'):
+                        player._scrap_infinite_user = False
                     affected += 1
             
             else:
@@ -1084,7 +1121,6 @@ class _AdminPlayerSimple(Resource):
             if 'inventory' in data:
                 inv = data['inventory']
                 if isinstance(inv, list):
-                    # json imported at top
                     player._inventory = json.dumps(inv)
                 else:
                     player._inventory = inv
@@ -1093,7 +1129,6 @@ class _AdminPlayerSimple(Resource):
             if 'scores' in data:
                 scores = data['scores']
                 if isinstance(scores, dict):
-                    # json imported at top
                     player._scores = json.dumps(scores)
                 else:
                     player._scores = scores
@@ -1107,11 +1142,20 @@ class _AdminPlayerSimple(Resource):
                 player._completed_laundry = bool(data['completed_laundry'])
             if 'completed_ash_trail' in data:
                 player._completed_ash_trail = bool(data['completed_ash_trail'])
-            # Accept both 'cryptochecker' (frontend) and 'whackarat' (legacy)
-            if 'completed_cryptochecker' in data:
-                player._completed_whackarat = bool(data['completed_cryptochecker'])
             if 'completed_whackarat' in data:
                 player._completed_whackarat = bool(data['completed_whackarat'])
+            
+            # Handle scrap ownership (NEW)
+            if 'scrap_crypto_miner' in data:
+                player._scrap_crypto_miner = bool(data['scrap_crypto_miner'])
+            if 'scrap_whackarat' in data:
+                player._scrap_whackarat = bool(data['scrap_whackarat'])
+            if 'scrap_laundry' in data:
+                player._scrap_laundry = bool(data['scrap_laundry'])
+            if 'scrap_ash_trail' in data:
+                player._scrap_ash_trail = bool(data['scrap_ash_trail'])
+            if 'scrap_infinite_user' in data:
+                player._scrap_infinite_user = bool(data['scrap_infinite_user'])
             
             # Update completed_all flag
             player._completed_all = (
@@ -1137,76 +1181,55 @@ class _AdminPlayerSimple(Resource):
 
 
 # ============================================================================
-# SHOP ENDPOINTS
+# SHOP ENDPOINTS - Uses scrap ownership fields instead of inventory
 # ============================================================================
 
-# Shop item definitions - MUST match frontend ClosetShop.js
-# Uses frontend naming convention (code_scrap_*) and story-based names
+# Shop item definitions with scrap field mapping
 SHOP_ITEMS = {
-    'code_scrap_crypto_miner': {
-        'name': 'Mining Algorithm Code Scrap',
-        'price_coin': 'ethereum',
-        'price_amount': 0.001
-    },
-    'code_scrap_laundry': {
-        'name': 'Transaction Ledger Code Scrap',
-        'price_coin': 'cardano',
-        'price_amount': 50
-    },
-    'code_scrap_cryptochecker': {
-        'name': 'Security Keys Code Scrap',
-        'price_coin': 'dogecoin',
-        'price_amount': 100
-    },
-    'code_scrap_ash_trail': {
-        'name': 'Backup Documentation Code Scrap',
-        'price_coin': 'solana',
-        'price_amount': 0.5
-    },
-    'code_scrap_infinite_user': {
-        'name': 'Master Password List Code Scrap',
-        'price_coin': 'ethereum',
-        'price_amount': 0.0015
-    },
-    # Legacy names for backwards compatibility
     'scrap_crypto_miner': {
         'name': 'Mining Algorithm Code Scrap',
-        'price_coin': 'ethereum',
-        'price_amount': 0.001
+        'description': 'The core hash algorithm for The Green Machine',
+        'price_coin': 'satoshis',
+        'price_amount': 500,
+        'scrap_field': '_scrap_crypto_miner'
     },
     'scrap_whackarat': {
         'name': 'Security Keys Code Scrap',
+        'description': 'Security protocol for scam detection',
         'price_coin': 'dogecoin',
-        'price_amount': 100
-    },
-    'scrap_cryptochecker': {
-        'name': 'Security Keys Code Scrap',
-        'price_coin': 'dogecoin',
-        'price_amount': 100
+        'price_amount': 10,
+        'scrap_field': '_scrap_whackarat'
     },
     'scrap_laundry': {
         'name': 'Transaction Ledger Code Scrap',
+        'description': 'Transaction validation module',
         'price_coin': 'cardano',
-        'price_amount': 50
+        'price_amount': 5,
+        'scrap_field': '_scrap_laundry'
     },
     'scrap_ash_trail': {
         'name': 'Backup Documentation Code Scrap',
+        'description': 'Blockchain audit trail module',
         'price_coin': 'solana',
-        'price_amount': 0.5
+        'price_amount': 0.05,
+        'scrap_field': '_scrap_ash_trail'
     },
     'scrap_infinite_user': {
         'name': 'Master Password List Code Scrap',
+        'description': 'Wallet security authentication module',
         'price_coin': 'ethereum',
-        'price_amount': 0.0015
+        'price_amount': 0.0005,
+        'scrap_field': '_scrap_infinite_user'
     }
 }
 
+
 class _ShopPurchaseResource(Resource):
-    """Handle shop purchases"""
+    """Handle shop purchases - sets scrap ownership field instead of adding to inventory"""
     
     @token_required()
     def post(self):
-        """POST /api/dbs2/shop/purchase - Buy an item from the shop"""
+        """POST /api/dbs2/shop/purchase - Buy a code scrap from the shop"""
         try:
             player = get_current_player()
             if not player:
@@ -1222,25 +1245,19 @@ class _ShopPurchaseResource(Resource):
             item = SHOP_ITEMS[item_id]
             price_coin = item['price_coin']
             price_amount = item['price_amount']
+            scrap_field = item.get('scrap_field')
             
-            # Check if player already owns this scrap
-            inventory = player.inventory if hasattr(player, 'inventory') else []
-            if isinstance(inventory, str):
-                try:
-                    inventory = json.loads(inventory) if inventory else []
-                except:
-                    inventory = []
-            
-            for inv_item in inventory:
-                inv_name = inv_item.get('name') if isinstance(inv_item, dict) else inv_item
-                if inv_name == item['name']:
-                    return {'error': 'You already own this item'}, 400
+            # Check if player already owns this scrap (via scrap field)
+            if scrap_field and hasattr(player, scrap_field):
+                if getattr(player, scrap_field, False):
+                    return {'error': 'You already own this code scrap'}, 400
             
             # Get player's balance for the required coin
-            coin_field = SUPPORTED_COINS.get(price_coin, {}).get('field')
-            if not coin_field:
+            coin_config = SUPPORTED_COINS.get(price_coin)
+            if not coin_config:
                 return {'error': 'Invalid coin type'}, 400
             
+            coin_field = coin_config.get('field')
             current_balance = getattr(player, coin_field, 0) or 0
             
             # Check if player can afford
@@ -1253,26 +1270,21 @@ class _ShopPurchaseResource(Resource):
             new_balance = current_balance - price_amount
             setattr(player, coin_field, new_balance)
             
-            # Add item to inventory
-            new_item = {
-                'name': item['name'],
-                'found_at': 'Closet Shop',
-                'acquired_at': datetime.now().isoformat()
-            }
-            inventory.append(new_item)
-            
-            # Save inventory
-            if hasattr(player, '_inventory'):
-                player._inventory = json.dumps(inventory)
+            # Mark scrap as owned (set the scrap field to True)
+            if scrap_field and hasattr(player, scrap_field):
+                setattr(player, scrap_field, True)
             
             db.session.commit()
             
             return {
                 'success': True,
                 'message': f"Purchased {item['name']}",
-                'item': new_item,
+                'item_id': item_id,
+                'item_name': item['name'],
                 'new_balance': new_balance,
-                'coin': price_coin
+                'coin': price_coin,
+                'scrap_owned': True,
+                'scraps_owned': format_scraps_owned(player)
             }, 200
             
         except Exception as e:
@@ -1283,7 +1295,7 @@ class _ShopPurchaseResource(Resource):
 
 
 class _ShopItemsResource(Resource):
-    """Get available shop items"""
+    """Get available shop items with ownership status"""
     
     @token_required()
     def get(self):
@@ -1293,38 +1305,38 @@ class _ShopItemsResource(Resource):
             if not player:
                 return {'error': 'Player not found'}, 404
             
-            # Get player inventory
-            inventory = player.inventory if hasattr(player, 'inventory') else []
-            if isinstance(inventory, str):
-                try:
-                    inventory = json.loads(inventory) if inventory else []
-                except:
-                    inventory = []
-            
-            owned_names = set()
-            for inv_item in inventory:
-                inv_name = inv_item.get('name') if isinstance(inv_item, dict) else inv_item
-                owned_names.add(inv_name)
-            
-            # Build response with ownership status
+            # Build response with ownership status from scrap fields
             items = []
             for item_id, item in SHOP_ITEMS.items():
                 coin_config = SUPPORTED_COINS.get(item['price_coin'], {})
                 coin_field = coin_config.get('field', '_crypto')
                 balance = getattr(player, coin_field, 0) or 0
                 
+                # Check ownership via scrap field
+                scrap_field = item.get('scrap_field')
+                owned = False
+                if scrap_field and hasattr(player, scrap_field):
+                    owned = bool(getattr(player, scrap_field, False))
+                
                 items.append({
                     'id': item_id,
                     'name': item['name'],
+                    'description': item.get('description', ''),
                     'price_coin': item['price_coin'],
                     'price_amount': item['price_amount'],
-                    'owned': item['name'] in owned_names,
-                    'can_afford': balance >= item['price_amount']
+                    'owned': owned,
+                    'can_afford': balance >= item['price_amount'],
+                    'balance': balance
                 })
             
-            return {'items': items}, 200
+            return {
+                'items': items,
+                'scraps_owned': format_scraps_owned(player)
+            }, 200
             
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return {'error': str(e)}, 500
 
 

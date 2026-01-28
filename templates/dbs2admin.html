@@ -270,41 +270,41 @@
             <div class="modal-body">
                 <input type="hidden" id="editInventoryUID">
                 
-                <h6 class="text-warning mb-3">🧩 Code Scraps (Minigame Rewards)</h6>
+                <h6 class="text-warning mb-3">🧩 Code Scraps (Shop Purchases)</h6>
                 <div class="row mb-4">
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_crypto_miner">
-                            <label class="form-check-label" for="scrap_crypto_miner">Crypto Miner</label>
+                            <label class="form-check-label" for="scrap_crypto_miner">⛏️ Mining Algorithm</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_infinite_user">
-                            <label class="form-check-label" for="scrap_infinite_user">Infinite User</label>
+                            <label class="form-check-label" for="scrap_infinite_user">🔐 Master Password</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_laundry">
-                            <label class="form-check-label" for="scrap_laundry">📋 Transaction Validator</label>
+                            <label class="form-check-label" for="scrap_laundry">📋 Transaction Ledger</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
                             <input class="form-check-input" type="checkbox" id="scrap_ash_trail">
-                            <label class="form-check-label" for="scrap_ash_trail">Ash Trail</label>
+                            <label class="form-check-label" for="scrap_ash_trail">📚 Backup Docs</label>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 mb-2">
                         <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="scrap_cryptochecker">
-                            <label class="form-check-label" for="scrap_cryptochecker">CryptoChecker (Security)</label>
+                            <input class="form-check-input" type="checkbox" id="scrap_whackarat">
+                            <label class="form-check-label" for="scrap_whackarat">🛡️ Security Keys</label>
                         </div>
                     </div>
                 </div>
 
-                <h6 class="text-info mb-3"> Current Inventory Items</h6>
+                <h6 class="text-info mb-3">Other Inventory Items</h6>
                 <div id="currentInventoryList" class="mb-3" style="max-height: 200px; overflow-y: auto;"></div>
 
                 <h6 class="text-success mb-3">Add Custom Item</h6>
@@ -534,14 +534,14 @@ function renderPlayers() {
 // ============ HELPERS ============
 
 function countScraps(p) {
-    // Handle both formats: individual fields or minigames_completed dict
-    const mg = p.minigames_completed || {};
+    // Count owned code scraps (purchased from shop) using scrap_* fields
+    const scraps = p.scraps_owned || {};
     return [
-        p.completed_crypto_miner || mg.crypto_miner,
-        p.completed_infinite_user || mg.infinite_user,
-        p.completed_laundry || mg.laundry,
-        p.completed_ash_trail || mg.ash_trail,
-        p.completed_cryptochecker || p.completed_whackarat || mg.cryptochecker || mg.whackarat
+        p.scrap_crypto_miner || scraps.crypto_miner,
+        p.scrap_infinite_user || scraps.infinite_user,
+        p.scrap_laundry || scraps.laundry,
+        p.scrap_ash_trail || scraps.ash_trail,
+        p.scrap_whackarat || scraps.whackarat
     ].filter(Boolean).length;
 }
 
@@ -582,22 +582,24 @@ async function viewPlayer(uid) {
                         <li><strong>All Complete:</strong> ${p.completed_all ? '✅' : '❌'}</li>
                     </ul>
                     
-                    <h6 class="text-success mt-3">Minigames</h6>
+                    <h6 class="text-success mt-3">Minigames Played</h6>
                     <ul class="list-unstyled">
-                        <li>Crypto Miner: ${p.completed_crypto_miner ? '✅' : '❌'}</li>
-                        <li>Infinite User: ${p.completed_infinite_user ? '✅' : '❌'}</li>
-                        <li>Transaction Validator: ${p.completed_laundry ? '✅' : '❌'}</li>
-                        <li>Ash Trail: ${p.completed_ash_trail ? '✅' : '❌'}</li>
-                        <li>CryptoChecker: ${p.completed_cryptochecker || p.completed_whackarat ? '✅' : '❌'}</li>
+                        <li>⛏️ Crypto Miner: ${p.completed_crypto_miner ? '✅' : '❌'}</li>
+                        <li>🔐 Infinite User: ${p.completed_infinite_user ? '✅' : '❌'}</li>
+                        <li>📋 Transaction Validator: ${p.completed_laundry ? '✅' : '❌'}</li>
+                        <li>📚 Ash Trail: ${p.completed_ash_trail ? '✅' : '❌'}</li>
+                        <li>🛡️ CryptoChecker: ${p.completed_whackarat ? '✅' : '❌'}</li>
                     </ul>
                 </div>
                 <div class="col-md-6">
-                    <h6 class="text-warning">Inventory (${(p.inventory || []).length})</h6>
-                    ${(p.inventory || []).length > 0 
-                        ? `<ul class="list-unstyled">${p.inventory.map(i => 
-                            `<li>• <strong>${i.name || i}</strong> <small class="text-muted">(${i.found_at || '?'})</small></li>`
-                        ).join('')}</ul>`
-                        : '<p class="text-muted">Empty</p>'}
+                    <h6 class="text-warning">Code Scraps Owned</h6>
+                    <ul class="list-unstyled">
+                        <li>⛏️ Mining Algorithm: ${p.scrap_crypto_miner ? '✅' : '❌'}</li>
+                        <li>🔐 Master Password: ${p.scrap_infinite_user ? '✅' : '❌'}</li>
+                        <li>📋 Transaction Ledger: ${p.scrap_laundry ? '✅' : '❌'}</li>
+                        <li>📚 Backup Docs: ${p.scrap_ash_trail ? '✅' : '❌'}</li>
+                        <li>🛡️ Security Keys: ${p.scrap_whackarat ? '✅' : '❌'}</li>
+                    </ul>
                     
                     <h6 class="text-info mt-3">Scores</h6>
                     ${Object.keys(p.scores || {}).length > 0 
@@ -681,12 +683,12 @@ async function openEditInventory(uid, name) {
         
         currentEditInventory = p.inventory || [];
         
-        // Set checkboxes based on completion status
-        document.getElementById('scrap_crypto_miner').checked = p.completed_crypto_miner || false;
-        document.getElementById('scrap_infinite_user').checked = p.completed_infinite_user || false;
-        document.getElementById('scrap_laundry').checked = p.completed_laundry || false;
-        document.getElementById('scrap_ash_trail').checked = p.completed_ash_trail || false;
-        document.getElementById('scrap_cryptochecker').checked = p.completed_cryptochecker || p.completed_whackarat || false;
+        // Set checkboxes based on scrap ownership (NEW system)
+        document.getElementById('scrap_crypto_miner').checked = p.scrap_crypto_miner || false;
+        document.getElementById('scrap_infinite_user').checked = p.scrap_infinite_user || false;
+        document.getElementById('scrap_laundry').checked = p.scrap_laundry || false;
+        document.getElementById('scrap_ash_trail').checked = p.scrap_ash_trail || false;
+        document.getElementById('scrap_whackarat').checked = p.scrap_whackarat || false;
         
         renderInventoryList();
         new bootstrap.Modal(document.getElementById('editInventoryModal')).show();
@@ -734,14 +736,14 @@ function clearInventory() {
 async function saveInventory() {
     const uid = document.getElementById('editInventoryUID').value;
     
-    // Build update data
+    // Build update data - using scrap_* fields for code scrap ownership
     const updateData = {
         inventory: currentEditInventory,
-        completed_crypto_miner: document.getElementById('scrap_crypto_miner').checked,
-        completed_infinite_user: document.getElementById('scrap_infinite_user').checked,
-        completed_laundry: document.getElementById('scrap_laundry').checked,
-        completed_ash_trail: document.getElementById('scrap_ash_trail').checked,
-        completed_cryptochecker: document.getElementById('scrap_cryptochecker').checked
+        scrap_crypto_miner: document.getElementById('scrap_crypto_miner').checked,
+        scrap_infinite_user: document.getElementById('scrap_infinite_user').checked,
+        scrap_laundry: document.getElementById('scrap_laundry').checked,
+        scrap_ash_trail: document.getElementById('scrap_ash_trail').checked,
+        scrap_whackarat: document.getElementById('scrap_whackarat').checked
     };
     
     try {
