@@ -22,6 +22,10 @@ def token_required(roles=None):
     def decorator(func_to_guard):
         @wraps(func_to_guard)
         def decorated(*args, **kwargs):
+            # Handle CORS preflight FIRST, before any token checks
+            if request.method == 'OPTIONS':
+                return ('', 200)
+            
             # Try to get token from Authorization header first
             auth_header = request.headers.get('Authorization')
             if auth_header and auth_header.startswith('Bearer '):
@@ -37,7 +41,6 @@ def token_required(roles=None):
                     "error": "Unauthorized"
                 }, 401
             try:
-                # Decode the token and retrieve the user data
                 data = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
                 current_user = User.query.filter_by(_uid=data["_uid"]).first()
                 if current_user is None:
@@ -47,7 +50,6 @@ def token_required(roles=None):
                         "error": "Unauthorized"
                     }, 401
                     
-                # Check user has the required role, when role is required 
                 if roles and current_user.role not in roles:
                     return {
                         "message": "Insufficient permissions. Required roles: {}".format(roles),
@@ -55,13 +57,8 @@ def token_required(roles=None):
                         "error": "Forbidden"
                     }, 403
                     
-                # Success finding user and (optional) role
-                # Set the current_user in the global context
-                # Flask's g object is a global object that lasts for the duration of the request
-                # The g.current_user can be referenced in decorated function 
                 g.current_user = current_user
             
-            # Error exception is for unknown jwt.decode errors 
             except Exception as e:
                 return {
                     "message": "Something went wrong decoding the token!",
@@ -69,13 +66,6 @@ def token_required(roles=None):
                     "error": str(e)
                 }, 500
 
-            # If this is a CORS preflight request, return 200 OK immediately
-            if request.method == 'OPTIONS':
-                return ('', 200)
-
-            # Success, return to the decorated function
-            # func_to_guard is the function with the @token_required
-            # func_to_guard returns with the original function arguments
             return func_to_guard(*args, **kwargs)
 
         return decorated
