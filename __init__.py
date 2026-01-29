@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask
 from flask_login import LoginManager
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -52,26 +52,6 @@ cors = CORS(
    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]  # Added DELETE
 )
 
-# Add CORS headers to all responses including errors
-@app.after_request
-def after_request(response):
-    origin = request.headers.get('Origin')
-    if origin in [
-        'http://localhost:4500',
-        'http://127.0.0.1:4500',
-        'http://localhost:4600',
-        'http://127.0.0.1:4600',
-        'http://localhost:4000',
-        'http://127.0.0.1:4000',
-        'https://open-coding-society.github.io',
-        'https://pages.opencodingsociety.com',
-        'https://p4codemaxxers.github.io'
-    ]:
-        response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
-        response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
-    return response
 
 # Admin Defaults
 app.config['ADMIN_USER'] = os.environ.get('ADMIN_USER') or 'Admin Name'
