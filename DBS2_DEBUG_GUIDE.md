@@ -29,6 +29,35 @@ This guide covers **two testing approaches**:
 
 ---
 
+## Troubleshooting 500 Errors (Player / Leaderboard / Admin)
+
+If you see **500 (INTERNAL SERVER ERROR)** on `/api/dbs2/player`, `/api/dbs2/leaderboard`, `/api/dbs2/admin/stats`, or `/api/dbs2/admin/players`:
+
+1. **See the actual error message (browser)**  
+   - Open DevTools → **Network** tab.  
+   - Click the failed request (e.g. `player`, `leaderboard?limit=10`, `admin/stats`, `admin/players`).  
+   - Open the **Response** (or **Preview**) tab.  
+   The backend returns JSON like `{"error": "Internal Server Error", "message": "..."}` — that `message` is the real cause (e.g. missing table, missing column). With `FLASK_DEBUG=1` you also get a `traceback` field.
+
+2. **See the Python traceback (backend)**  
+   - In the terminal where you ran `python main.py` (or your Flask command), look for the full traceback when the 500 happens.  
+   - Admin/leaderboard handlers log with `traceback.print_exc()` so the last line (e.g. `OperationalError: no such column`) tells you what broke.
+
+3. **Ensure DB tables exist**  
+   - Restart the backend so `db.create_all()` runs at startup (in `main.py`).  
+   - Or run: `flask custom generate_data` to create tables and test data.  
+   - If the DB file was created by an older schema, delete `instance/volumes/user_management.db` (or your DB path) and restart so tables are recreated with the current schema.
+
+4. **Admin panel “Error loading”**  
+   - The admin page at `/dbs2admin` calls `/api/dbs2/admin/stats`, `/api/dbs2/leaderboard`, `/api/dbs2/leaderboard/minigame`, and `/api/dbs2/admin/players`.  
+   - These endpoints are written to return **200 with empty data** on DB errors (so the UI shows “No players yet” instead of “Error loading”). If you still see 500, an unhandled exception is occurring; use steps 1–2 to read the `message` and backend traceback.
+
+5. **Code to fix**  
+   - **Player/leaderboard 500:** `api/dbs2_api.py` (player resource, leaderboard resource, `get_current_player()`).  
+   - **Model/DB errors:** `model/dbs2_player.py` (e.g. `read()`, `get_or_create()`, `get_leaderboard()`).
+
+---
+
 ## Quick Start Testing
 
 ### Step 1: Start Backend Server

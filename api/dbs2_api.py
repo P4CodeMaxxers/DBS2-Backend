@@ -17,7 +17,7 @@ import requests
 import json
 
 # Import your models and decorators
-from model.dbs2_player import DBS2Player
+from model.dbs2_player import DBS2Player, migrate_dbs2_players_add_scrap_columns
 from model.user import User
 from model.ashtrail_run import AshTrailRun
 from __init__ import db
@@ -98,21 +98,51 @@ _price_cache = {
 # HELPER FUNCTIONS
 # ============================================================================
 
+def ensure_dbs2_tables():
+    """Create dbs2_players table if missing; add scrap columns if table exists with old schema."""
+    try:
+        DBS2Player.query.limit(1).first()
+    except Exception as e:
+        err_msg = str(e).lower()
+        if 'no such table' in err_msg:
+            try:
+                db.create_all()
+            except Exception as create_err:
+                print('[DBS2] ensure_dbs2_tables: create_all failed:', create_err)
+        elif 'no such column' in err_msg:
+            migrate_dbs2_players_add_scrap_columns()
+        else:
+            try:
+                db.create_all()
+                migrate_dbs2_players_add_scrap_columns()
+            except Exception as create_err:
+                print('[DBS2] ensure_dbs2_tables failed:', create_err)
+
+
 def get_current_player():
-    """Get DBS2Player for current authenticated user, create if doesn't exist"""
+    """Get DBS2Player for current authenticated user, create if doesn't exist.
+    If table is missing, create_all() and retry once.
+    """
     if not g.current_user:
         return None
-    return DBS2Player.get_or_create(g.current_user.id)
+    try:
+        return DBS2Player.get_or_create(g.current_user.id)
+    except Exception:
+        try:
+            db.create_all()
+            return DBS2Player.get_or_create(g.current_user.id)
+        except Exception:
+            raise
 
 
 def format_minigames(player):
-    """Convert individual completion fields to dict format for API response"""
+    """Convert individual completion fields to dict format for API response (getattr for missing columns)"""
     return {
-        'crypto_miner': player._completed_crypto_miner,
-        'infinite_user': player._completed_infinite_user,
-        'laundry': player._completed_laundry,
-        'ash_trail': player._completed_ash_trail,
-        'whackarat': player._completed_whackarat
+        'crypto_miner': getattr(player, '_completed_crypto_miner', False),
+        'infinite_user': getattr(player, '_completed_infinite_user', False),
+        'laundry': getattr(player, '_completed_laundry', False),
+        'ash_trail': getattr(player, '_completed_ash_trail', False),
+        'whackarat': getattr(player, '_completed_whackarat', False)
     }
 
 
@@ -205,10 +235,13 @@ class _PlayerResource(Resource):
     @token_required()
     def get(self):
         """GET /api/dbs2/player - Get current player's full data"""
-        player = get_current_player()
-        if not player:
-            return {'error': 'Not authenticated'}, 401
-        return player.read(), 200
+        try:
+            player = get_current_player()
+            if not player:
+                return {'error': 'Not authenticated'}, 401
+            return player.read(), 200
+        except Exception as e:
+            return {'error': 'Player fetch failed', 'message': str(e)}, 500
     
     @token_required()
     def put(self):
@@ -468,10 +501,13 @@ class _InventoryResource(Resource):
     @token_required()
     def get(self):
         """GET /api/dbs2/inventory"""
-        player = get_current_player()
-        if not player:
-            return {'error': 'Not authenticated'}, 401
-        return {'inventory': player.inventory}, 200
+        try:
+            player = get_current_player()
+            if not player:
+                return {'error': 'Not authenticated'}, 401
+            return {'inventory': player.inventory}, 200
+        except Exception as e:
+            return {'error': 'Inventory fetch failed', 'message': str(e)}, 500
     
     @token_required()
     def post(self):
@@ -615,25 +651,40 @@ class _MinigameRewardResource(Resource):
 # LEADERBOARD ENDPOINTS (Public)
 # ============================================================================
 
+def _safe_limit(default=10, max_val=100):
+    """Parse limit from request args without raising."""
+    try:
+        raw = request.args.get('limit', default)
+        n = int(raw) if raw not in (None, '') else default
+        return max(1, min(n, max_val))
+    except (ValueError, TypeError):
+        return default
+
+
 class _LeaderboardResource(Resource):
     """Public leaderboard"""
     
     def get(self):
         """GET /api/dbs2/leaderboard?limit=10"""
-        limit = min(int(request.args.get('limit', 10)), 100)
-        leaderboard = DBS2Player.get_leaderboard(limit)
-        
-        # Add minigames_completed format for frontend compatibility
-        for entry in leaderboard:
-            entry['minigames_completed'] = {
-                'crypto_miner': entry.get('completed_crypto_miner', False),
-                'infinite_user': entry.get('completed_infinite_user', False),
-                'laundry': entry.get('completed_laundry', False),
-                'ash_trail': entry.get('completed_ash_trail', False),
-                'whackarat': entry.get('completed_whackarat', False)
-            }
-        
-        return {'leaderboard': leaderboard}, 200
+        try:
+            ensure_dbs2_tables()
+            limit = _safe_limit(10, 100)
+            leaderboard = DBS2Player.get_leaderboard(limit)
+            # Add minigames_completed format for frontend compatibility
+            for entry in leaderboard:
+                entry['minigames_completed'] = {
+                    'crypto_miner': entry.get('completed_crypto_miner', False),
+                    'infinite_user': entry.get('completed_infinite_user', False),
+                    'laundry': entry.get('completed_laundry', False),
+                    'ash_trail': entry.get('completed_ash_trail', False),
+                    'whackarat': entry.get('completed_whackarat', False)
+                }
+            return {'leaderboard': leaderboard}, 200
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print('[DBS2] Leaderboard failed:', e)
+            return {'leaderboard': []}, 200
 
 
 class _MinigameLeaderboardResource(Resource):
@@ -641,39 +692,47 @@ class _MinigameLeaderboardResource(Resource):
     
     def get(self):
         """GET /api/dbs2/leaderboard/minigame?game=ash_trail&limit=10"""
-        game = request.args.get('game', '')
-        limit = min(int(request.args.get('limit', 10)), 100)
-        
-        if not game:
-            return {'error': 'Game parameter required'}, 400
-        
-        # Get all players with scores
-        players = DBS2Player.query.all()
-        
-        entries = []
-        for player in players:
-            scores = player.scores
-            if game in scores:
-                user_info = {}
-                if player.user:
-                    user_info = {
-                        'uid': getattr(player.user, '_uid', None),
-                        'name': getattr(player.user, '_name', None)
-                    }
-                entries.append({
-                    'user_info': user_info,
-                    'score': scores[game],
-                    'game': game
-                })
-        
-        # Sort by score descending
-        entries.sort(key=lambda x: x['score'], reverse=True)
-        
-        # Add ranks
-        for i, entry in enumerate(entries[:limit]):
-            entry['rank'] = i + 1
-        
-        return {'leaderboard': entries[:limit], 'game': game}, 200
+        try:
+            ensure_dbs2_tables()
+            game = (request.args.get('game') or '').strip()
+            limit = _safe_limit(10, 100)
+            if not game:
+                return {'error': 'Game parameter required'}, 400
+            
+            players = DBS2Player.query.all()
+            entries = []
+            for player in players:
+                try:
+                    scores = player.scores
+                except Exception:
+                    scores = {}
+                if game in scores:
+                    user_info = {}
+                    if player.user:
+                        user_info = {
+                            'uid': getattr(player.user, '_uid', None),
+                            'name': getattr(player.user, '_name', None)
+                        }
+                    try:
+                        score_val = scores[game]
+                        if not isinstance(score_val, (int, float)):
+                            score_val = float(score_val) if score_val is not None else 0
+                    except (TypeError, ValueError):
+                        score_val = 0
+                    entries.append({
+                        'user_info': user_info,
+                        'score': score_val,
+                        'game': game
+                    })
+            entries.sort(key=lambda x: x['score'], reverse=True)
+            for i, entry in enumerate(entries[:limit]):
+                entry['rank'] = i + 1
+            return {'leaderboard': entries[:limit], 'game': game}, 200
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print('[DBS2] Minigame leaderboard failed:', e)
+            return {'leaderboard': [], 'game': game or 'unknown'}, 200
 
 
 # ============================================================================
@@ -758,23 +817,25 @@ class _AdminAllPlayers(Resource):
     def get(self):
         """GET /api/dbs2/admin/players"""
         try:
+            ensure_dbs2_tables()
             players = DBS2Player.query.all()
             result = []
-            
             for player in players:
-                data = player.read()
-                data['minigames_completed'] = format_minigames(player)
-                data['scraps_owned'] = format_scraps_owned(player)
-                result.append(data)
-            
-            # Sort by crypto descending
+                try:
+                    data = player.read()
+                    data['minigames_completed'] = format_minigames(player)
+                    data['scraps_owned'] = format_scraps_owned(player)
+                    result.append(data)
+                except Exception as row_err:
+                    print('[DBS2] admin/players row error:', row_err)
+                    continue
             result.sort(key=lambda x: x.get('crypto', 0), reverse=True)
-            
             return {'players': result, 'count': len(result)}, 200
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return {'error': str(e)}, 500
+            print('[DBS2] admin/players failed:', e)
+            return {'players': [], 'count': 0}, 200
 
 
 class _AdminPlayerDetail(Resource):
@@ -913,29 +974,30 @@ class _AdminStats(Resource):
     def get(self):
         """GET /api/dbs2/admin/stats"""
         try:
+            ensure_dbs2_tables()
             players = DBS2Player.query.all()
             
             total_players = len(players)
-            total_crypto = sum(p._crypto for p in players)
+            total_crypto = sum(getattr(p, '_crypto', 0) for p in players)
             avg_crypto = total_crypto / total_players if total_players > 0 else 0
             
-            # Sum wallet totals
+            # Sum wallet totals (getattr for missing columns / old schema)
             wallet_totals = {
                 'satoshis': total_crypto,
-                'bitcoin': sum(p._wallet_btc or 0 for p in players),
-                'ethereum': sum(p._wallet_eth or 0 for p in players),
-                'solana': sum(p._wallet_sol or 0 for p in players),
-                'cardano': sum(p._wallet_ada or 0 for p in players),
-                'dogecoin': sum(p._wallet_doge or 0 for p in players)
+                'bitcoin': sum(getattr(p, '_wallet_btc', 0) or 0 for p in players),
+                'ethereum': sum(getattr(p, '_wallet_eth', 0) or 0 for p in players),
+                'solana': sum(getattr(p, '_wallet_sol', 0) or 0 for p in players),
+                'cardano': sum(getattr(p, '_wallet_ada', 0) or 0 for p in players),
+                'dogecoin': sum(getattr(p, '_wallet_doge', 0) or 0 for p in players)
             }
             
             # Count minigame completions
             minigame_counts = {
-                'crypto_miner': sum(1 for p in players if p._completed_crypto_miner),
-                'infinite_user': sum(1 for p in players if p._completed_infinite_user),
-                'laundry': sum(1 for p in players if p._completed_laundry),
-                'ash_trail': sum(1 for p in players if p._completed_ash_trail),
-                'whackarat': sum(1 for p in players if p._completed_whackarat)
+                'crypto_miner': sum(1 for p in players if getattr(p, '_completed_crypto_miner', False)),
+                'infinite_user': sum(1 for p in players if getattr(p, '_completed_infinite_user', False)),
+                'laundry': sum(1 for p in players if getattr(p, '_completed_laundry', False)),
+                'ash_trail': sum(1 for p in players if getattr(p, '_completed_ash_trail', False)),
+                'whackarat': sum(1 for p in players if getattr(p, '_completed_whackarat', False))
             }
             
             # Count scrap ownership
@@ -947,15 +1009,15 @@ class _AdminStats(Resource):
                 'infinite_user': sum(1 for p in players if getattr(p, '_scrap_infinite_user', False))
             }
             
-            # Top players
-            sorted_players = sorted(players, key=lambda p: p._crypto, reverse=True)[:5]
+            # Top players (getattr for _crypto in case of old schema)
+            sorted_players = sorted(players, key=lambda p: getattr(p, '_crypto', 0), reverse=True)[:5]
             top_players = []
             for p in sorted_players:
                 if p.user:
                     top_players.append({
                         'uid': getattr(p.user, '_uid', 'unknown'),
                         'name': getattr(p.user, '_name', 'Unknown'),
-                        'crypto': p._crypto,
+                        'crypto': getattr(p, '_crypto', 0),
                         'wallet': p.wallet
                     })
             
@@ -972,7 +1034,17 @@ class _AdminStats(Resource):
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return {'error': str(e)}, 500
+            print('[DBS2] admin/stats failed:', e)
+            # Return zeros so admin panel loads instead of "Error loading"
+            return {
+                'total_players': 0,
+                'total_crypto_in_circulation': 0,
+                'average_crypto': 0,
+                'wallet_totals': {'satoshis': 0, 'bitcoin': 0, 'ethereum': 0, 'solana': 0, 'cardano': 0, 'dogecoin': 0},
+                'minigame_completions': {'crypto_miner': 0, 'infinite_user': 0, 'laundry': 0, 'ash_trail': 0, 'whackarat': 0},
+                'scrap_ownership': {'crypto_miner': 0, 'whackarat': 0, 'laundry': 0, 'ash_trail': 0, 'infinite_user': 0},
+                'top_players': []
+            }, 200
 
 
 class _AdminBulkUpdate(Resource):

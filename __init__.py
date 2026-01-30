@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, request
 from flask_login import LoginManager
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -49,8 +49,41 @@ cors = CORS(
        'https://pages.opencodingsociety.com',
        'https://p4codemaxxers.github.io'
    ],
-   methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]  # Added DELETE
+   methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+   allow_headers=["Content-Type", "Authorization", "X-Origin", "Cache-Control", "Pragma"]
 )
+
+# Ensure CORS on every response (including 500) so frontend can see errors from localhost:4600 -> 8403
+CORS_ORIGINS = [
+    'http://localhost:4500', 'http://127.0.0.1:4500',
+    'http://localhost:4600', 'http://127.0.0.1:4600',
+    'http://localhost:4000', 'http://127.0.0.1:4000',
+    'https://open-coding-society.github.io',
+    'https://pages.opencodingsociety.com',
+    'https://p4codemaxxers.github.io'
+]
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get('Origin') or getattr(request, 'origin', None)
+    if origin and origin in CORS_ORIGINS:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Origin, Cache-Control, Pragma'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    return response
+
+
+@app.errorhandler(500)
+def handle_500(err):
+    """Return JSON 500 with error message so admin/API clients can see the cause; CORS is applied in after_request."""
+    import traceback
+    from flask import jsonify
+    tb = traceback.format_exc()
+    body = {'error': 'Internal Server Error', 'message': str(err)}
+    if app.debug or os.environ.get('FLASK_DEBUG'):
+        body['traceback'] = tb
+    return jsonify(body), 500
 
 
 # Admin Defaults
@@ -69,7 +102,8 @@ app.config['DEFAULT_PFP'] = os.environ.get('DEFAULT_PFP') or 'default.png'
 
 
 # Browser settings
-SECRET_KEY = os.environ.get('SECRET_KEY') # secret key for session management
+# SECRET_KEY is required for JWT/sessions; use env in production, dev fallback for local (avoids "Expected a string value" on login)
+SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
 SESSION_COOKIE_NAME = os.environ.get('SESSION_COOKIE_NAME') or 'sess_python_flask'
 JWT_TOKEN_NAME = os.environ.get('JWT_TOKEN_NAME') or 'jwt_python_flask'
 app.config['SECRET_KEY'] = SECRET_KEY

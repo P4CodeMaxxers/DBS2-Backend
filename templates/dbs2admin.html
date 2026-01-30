@@ -377,7 +377,10 @@ let isAutoSyncing = false;
 async function loadStats() {
     try {
         const response = await fetch(`${API_BASE}/admin/stats`);
-        if (!response.ok) throw new Error('Failed');
+        if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new Error(errBody.message || errBody.error || 'Failed');
+        }
         const data = await response.json();
         
         document.getElementById('statTotalPlayers').textContent = data.total_players || 0;
@@ -388,7 +391,7 @@ async function loadStats() {
         const total = Object.values(completions).reduce((a, b) => a + b, 0);
         document.getElementById('statCompletions').textContent = total;
     } catch (e) {
-        console.error('Stats error:', e);
+        console.error('Stats error:', e.message || e);
     }
 }
 
@@ -398,7 +401,10 @@ async function loadAshTrailLeaderboard() {
         const book = document.getElementById('ashTrailBookSelect')?.value || 'defi_grimoire';
         const gameKey = `ash_trail_${book}`;
         const response = await fetch(`${API_BASE}/leaderboard/minigame?game=${encodeURIComponent(gameKey)}&limit=10`);
-        if (!response.ok) throw new Error('Failed');
+        if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new Error(errBody.message || errBody.error || 'Failed');
+        }
         const data = await response.json();
 
         const tbody = document.getElementById('ashTrailLeaderboardBody');
@@ -478,7 +484,10 @@ async function loadPlayers() {
     try {
         const sort = document.getElementById('sortSelect').value;
         const response = await fetch(`${API_BASE}/admin/players?sort=${sort}`);
-        if (!response.ok) throw new Error('Failed');
+        if (!response.ok) {
+            const errBody = await response.json().catch(() => ({}));
+            throw new Error(errBody.message || errBody.error || 'Failed');
+        }
         const data = await response.json();
         
         allPlayers = data.players || [];

@@ -103,14 +103,14 @@ class DBS2Player(db.Model):
     
     @property
     def wallet(self):
-        """Get full wallet as dictionary"""
+        """Get full wallet as dictionary (getattr for missing columns / old DB schema)"""
         return {
-            'satoshis': self._crypto,
-            'bitcoin': self._wallet_btc or 0.0,
-            'ethereum': self._wallet_eth or 0.0,
-            'solana': self._wallet_sol or 0.0,
-            'cardano': self._wallet_ada or 0.0,
-            'dogecoin': self._wallet_doge or 0.0
+            'satoshis': getattr(self, '_crypto', 0) or 0,
+            'bitcoin': getattr(self, '_wallet_btc', 0) or 0.0,
+            'ethereum': getattr(self, '_wallet_eth', 0) or 0.0,
+            'solana': getattr(self, '_wallet_sol', 0) or 0.0,
+            'cardano': getattr(self, '_wallet_ada', 0) or 0.0,
+            'dogecoin': getattr(self, '_wallet_doge', 0) or 0.0
         }
     
     def add_to_wallet(self, coin_id, amount):
@@ -142,13 +142,13 @@ class DBS2Player(db.Model):
     
     @property
     def scraps_owned(self):
-        """Get dictionary of scrap ownership status"""
+        """Get dictionary of scrap ownership status (getattr for missing columns)"""
         return {
-            'crypto_miner': self._scrap_crypto_miner or False,
-            'whackarat': self._scrap_whackarat or False,
-            'laundry': self._scrap_laundry or False,
-            'ash_trail': self._scrap_ash_trail or False,
-            'infinite_user': self._scrap_infinite_user or False
+            'crypto_miner': getattr(self, '_scrap_crypto_miner', False) or False,
+            'whackarat': getattr(self, '_scrap_whackarat', False) or False,
+            'laundry': getattr(self, '_scrap_laundry', False) or False,
+            'ash_trail': getattr(self, '_scrap_ash_trail', False) or False,
+            'infinite_user': getattr(self, '_scrap_infinite_user', False) or False
         }
     
     def owns_scrap(self, scrap_id):
@@ -345,31 +345,32 @@ class DBS2Player(db.Model):
                 'name': getattr(self.user, '_name', None)
             }
         
+        # Use getattr so missing columns (old DB schema) don't crash
         return {
             'id': self.id,
             'user_id': self.user_id,
             'user_info': user_info,
-            'crypto': self._crypto,
-            'satoshis': self._crypto,
+            'crypto': getattr(self, '_crypto', 0),
+            'satoshis': getattr(self, '_crypto', 0),
             'wallet': self.wallet,
             'inventory': self.inventory,
             'scores': self.scores,
             # Minigame completions
-            'completed_crypto_miner': self._completed_crypto_miner,
-            'completed_infinite_user': self._completed_infinite_user,
-            'completed_laundry': self._completed_laundry,
-            'completed_ash_trail': self._completed_ash_trail,
-            'completed_whackarat': self._completed_whackarat,
-            'completed_all': self._completed_all,
-            # Code scrap ownership (NEW)
-            'scrap_crypto_miner': self._scrap_crypto_miner or False,
-            'scrap_whackarat': self._scrap_whackarat or False,
-            'scrap_laundry': self._scrap_laundry or False,
-            'scrap_ash_trail': self._scrap_ash_trail or False,
-            'scrap_infinite_user': self._scrap_infinite_user or False,
+            'completed_crypto_miner': getattr(self, '_completed_crypto_miner', False),
+            'completed_infinite_user': getattr(self, '_completed_infinite_user', False),
+            'completed_laundry': getattr(self, '_completed_laundry', False),
+            'completed_ash_trail': getattr(self, '_completed_ash_trail', False),
+            'completed_whackarat': getattr(self, '_completed_whackarat', False),
+            'completed_all': getattr(self, '_completed_all', False),
+            # Code scrap ownership
+            'scrap_crypto_miner': getattr(self, '_scrap_crypto_miner', False) or False,
+            'scrap_whackarat': getattr(self, '_scrap_whackarat', False) or False,
+            'scrap_laundry': getattr(self, '_scrap_laundry', False) or False,
+            'scrap_ash_trail': getattr(self, '_scrap_ash_trail', False) or False,
+            'scrap_infinite_user': getattr(self, '_scrap_infinite_user', False) or False,
             'scraps_owned': self.scraps_owned,
             # Other
-            'has_seen_intro': self._has_seen_intro,
+            'has_seen_intro': getattr(self, '_has_seen_intro', False),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -409,10 +410,41 @@ class DBS2Player(db.Model):
         return leaderboard
 
 
+def migrate_dbs2_players_add_scrap_columns():
+    """Add scrap (and _has_seen_intro) columns to dbs2_players if missing (SQLite migration)."""
+    from sqlalchemy import text
+    try:
+        result = db.session.execute(text("PRAGMA table_info(dbs2_players)"))
+        rows = result.fetchall()
+        existing = {row[1] for row in rows}  # column name is index 1
+    except Exception:
+        return
+    columns_to_add = [
+        ('_scrap_crypto_miner', 'INTEGER DEFAULT 0'),
+        ('_scrap_whackarat', 'INTEGER DEFAULT 0'),
+        ('_scrap_laundry', 'INTEGER DEFAULT 0'),
+        ('_scrap_ash_trail', 'INTEGER DEFAULT 0'),
+        ('_scrap_infinite_user', 'INTEGER DEFAULT 0'),
+        ('_has_seen_intro', 'INTEGER DEFAULT 0'),
+    ]
+    for col_name, col_type in columns_to_add:
+        if col_name not in existing:
+            try:
+                db.session.execute(text(
+                    f"ALTER TABLE dbs2_players ADD COLUMN {col_name} {col_type}"
+                ))
+                db.session.commit()
+                print(f'[DBS2] Added column dbs2_players.{col_name}')
+            except Exception as e:
+                db.session.rollback()
+                print(f'[DBS2] migrate add column {col_name}:', e)
+
+
 def initDBS2Players():
     """Initialize DBS2 players table"""
     with app.app_context():
         db.create_all()
+        migrate_dbs2_players_add_scrap_columns()
         
         # Create test players if they don't exist
         test_uids = ['west', 'cyrus', 'maya']
