@@ -37,7 +37,7 @@ server {
             add_header "Access-Control-Allow-Credentials" "true" always;
             add_header "Access-Control-Allow-Methods" "GET, POST, PUT, DELETE, OPTIONS, HEAD" always;
             add_header "Access-Control-Allow-MaxAge" 600 always;
-            add_header "Access-Control-Allow-Headers" "Authorization, Origin, X-Origin, X-Requested-With, Content-Type, Accept" always;
+            add_header "Access-Control-Allow-Headers" "Authorization, Origin, X-Origin, X-Requested-With, Content-Type, Accept, Cache-Control, Pragma" always;
             return 204;
         }
 
@@ -86,7 +86,7 @@ server {
             add_header "Access-Control-Allow-Credentials" "true" always;
             add_header "Access-Control-Allow-Methods" "GET, POST, PUT, DELETE, OPTIONS, HEAD" always;
             add_header "Access-Control-Allow-MaxAge" 600 always;
-            add_header "Access-Control-Allow-Headers" "Authorization, Origin, X-Origin, X-Requested-With, Content-Type, Accept" always;
+            add_header "Access-Control-Allow-Headers" "Authorization, Origin, X-Origin, X-Requested-With, Content-Type, Accept, Cache-Control, Pragma" always;
             return 204;
         }
 
