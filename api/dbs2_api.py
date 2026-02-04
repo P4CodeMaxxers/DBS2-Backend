@@ -570,6 +570,11 @@ class _ScoresResource(Resource):
         
         return {'scores': player.scores}, 200
 
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/scores - Update score for a game (same as PUT; frontend uses POST)"""
+        return self.put()
+
 
 # ============================================================================
 # MINIGAMES ENDPOINTS
