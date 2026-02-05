@@ -14,9 +14,8 @@ from __init__ import app, db
 from model.user import User
 import json
 from datetime import datetime
-
-
 class DBS2Player(db.Model):
+    
     """
     DBS2 Player model with:
     - user_id foreign key to User
@@ -37,6 +36,12 @@ class DBS2Player(db.Model):
     # Main currency (satoshis)
     _crypto = db.Column(db.Integer, default=0)
     
+    equipped_character = db.Column(
+            db.String(100),
+            default='chillguy',
+            nullable=False
+        )
+
     # Multi-coin wallet balances
     _wallet_btc = db.Column(db.Float, default=0.0)   # Bitcoin
     _wallet_eth = db.Column(db.Float, default=0.0)   # Ethereum
@@ -426,6 +431,8 @@ def migrate_dbs2_players_add_scrap_columns():
         ('_scrap_ash_trail', 'INTEGER DEFAULT 0'),
         ('_scrap_infinite_user', 'INTEGER DEFAULT 0'),
         ('_has_seen_intro', 'INTEGER DEFAULT 0'),
+        ('equipped_character', "TEXT DEFAULT 'chillguy'"),  # 👈 ADD THIS
+
     ]
     for col_name, col_type in columns_to_add:
         if col_name not in existing:
