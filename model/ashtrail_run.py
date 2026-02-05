@@ -37,9 +37,10 @@ class AshTrailRun(db.Model):
     def read(self, include_trace=False):
         user_info = {}
         if self.user:
+            display_name = self.guest_name if self.guest_name else getattr(self.user, '_name', None)
             user_info = {
                 'uid': getattr(self.user, '_uid', None),
-                'name': getattr(self.user, '_name', None),
+                'name': display_name or getattr(self.user, '_name', None),
             }
         payload = {
             'id': self.id,

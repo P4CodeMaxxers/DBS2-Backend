@@ -22,6 +22,8 @@ from model.user import User
 from model.ashtrail_run import AshTrailRun
 from __init__ import db
 from api.jwt_authorize import token_required
+from flask import current_app
+import jwt
 
 # Create Blueprint
 dbs2_api = Blueprint('dbs2_api', __name__, url_prefix='/api/dbs2')
@@ -131,6 +133,56 @@ def ensure_ashtrail_tables():
                 print('[DBS2] Created ashtrail_runs table')
             except Exception as create_err:
                 print('[DBS2] ensure_ashtrail_tables: create_all failed:', create_err)
+    # Add guest_name column if missing (for existing DBs created before guest support)
+    try:
+        from sqlalchemy import inspect
+        insp = inspect(db.engine)
+        if 'ashtrail_runs' in insp.get_table_names() and 'guest_name' not in [c['name'] for c in insp.get_columns('ashtrail_runs')]:
+            db.session.execute(db.text('ALTER TABLE ashtrail_runs ADD COLUMN guest_name VARCHAR(128)'))
+            db.session.commit()
+            print('[DBS2] Added guest_name column to ashtrail_runs')
+    except Exception as col_err:
+        db.session.rollback()
+        # Column may already exist
+        pass
+
+
+def _optional_set_current_user():
+    """If valid JWT is present, set g.current_user. Does not return 401 if missing."""
+    if hasattr(g, 'current_user') and g.current_user:
+        return
+    auth_header = request.headers.get('Authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+    else:
+        token = request.cookies.get(current_app.config.get("JWT_TOKEN_NAME"))
+    if not token:
+        return
+    try:
+        data = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+        user = User.query.filter_by(_uid=data["_uid"]).first()
+        if user:
+            g.current_user = user
+    except Exception:
+        pass
+
+
+def get_guest_user_id():
+    """Get or create the shared guest user for unauthenticated Ash Trail runs."""
+    guest = User.query.filter_by(_uid='_ashtrail_guest').first()
+    if not guest:
+        from werkzeug.security import generate_password_hash
+        guest = User(
+            name='Guest',
+            uid='_ashtrail_guest',
+            password=generate_password_hash('no-login', 'pbkdf2:sha256', salt_length=10),
+            role='User'
+        )
+        guest._email = 'guest@ashtrail.local'
+        db.session.add(guest)
+        db.session.commit()
+        print('[DBS2] Created ashtrail guest user')
+    return guest.id
 
 
 def get_current_player():
@@ -809,32 +861,38 @@ class _AshTrailRunsResource(Resource):
             'runs': [r.read(include_trace=False) for r in runs]
         }, 200
     
-    @token_required()
     def post(self):
-        """POST /api/dbs2/ash-trail/runs - Submit a run"""
+        """POST /api/dbs2/ash-trail/runs - Submit a run (authenticated or guest)"""
         ensure_ashtrail_tables()
-        player = get_current_player()
-        if not player:
-            return {'error': 'Not authenticated', 'message': 'Please log in to save your Ash Trail run'}, 401
-        
-        data = request.get_json()
+        _optional_set_current_user()
+
+        data = request.get_json() or {}
         book_id = data.get('book_id', '')
         score = float(data.get('score', 0))
         trace = data.get('trace', [])
-        
+        guest_name = (data.get('guest_name') or '').strip()[:128]  # For unauthenticated runs
+
         if not book_id:
             return {'error': 'book_id required'}, 400
-        
+
+        if getattr(g, 'current_user', None):
+            user_id = g.current_user.id
+            run_guest_name = None  # Authenticated users use their profile name
+        else:
+            user_id = get_guest_user_id()
+            run_guest_name = guest_name or 'Guest'
+
         run = AshTrailRun(
-            user_id=g.current_user.id,
+            user_id=user_id,
             book_id=book_id,
-            score=score
+            score=score,
+            guest_name=run_guest_name
         )
         run.trace = trace
-        
+
         db.session.add(run)
         db.session.commit()
-        
+
         return {'success': True, 'run': run.read(include_trace=True)}, 201
 
 
