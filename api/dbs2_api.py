@@ -910,9 +910,8 @@ class _AshTrailRunDetailResource(Resource):
 
 
 class _AshTrailAIResource(Resource):
-    """AI endpoint for Ash Trail (placeholder)"""
+    """AI endpoint for Ash Trail (optional feedback, no auth required for guests)"""
     
-    @token_required()
     def post(self):
         """POST /api/dbs2/ash-trail/ai"""
         return {'message': 'AI analysis not implemented'}, 501
