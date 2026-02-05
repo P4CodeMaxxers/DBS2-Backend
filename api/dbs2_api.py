@@ -178,7 +178,7 @@ def get_guest_user_id():
             password=generate_password_hash('no-login', 'pbkdf2:sha256', salt_length=10),
             role='User'
         )
-        guest._email = 'guest@ashtrail.local'
+        guest.email = 'guest@ashtrail.local'
         db.session.add(guest)
         db.session.commit()
         print('[DBS2] Created ashtrail guest user')

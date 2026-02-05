@@ -19,6 +19,7 @@ class AshTrailRun(db.Model):
     book_id = db.Column(db.String(64), nullable=False, index=True)
     score = db.Column(db.Float, nullable=False, default=0)
     _trace = db.Column(db.Text, nullable=False, default='[]')
+    guest_name = db.Column(db.String(128), nullable=True)  # Display name when run is from unauthenticated guest
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
     user = db.relationship('User', backref=db.backref('ashtrail_runs', lazy=True))
