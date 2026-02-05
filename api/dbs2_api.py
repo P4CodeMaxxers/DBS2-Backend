@@ -119,6 +119,20 @@ def ensure_dbs2_tables():
                 print('[DBS2] ensure_dbs2_tables failed:', create_err)
 
 
+def ensure_ashtrail_tables():
+    """Create ashtrail_runs table if missing (needed for Ash Trail ghost replays)."""
+    try:
+        AshTrailRun.query.limit(1).first()
+    except Exception as e:
+        err_msg = str(e).lower()
+        if 'no such table' in err_msg or 'ashtrail' in err_msg:
+            try:
+                db.create_all()
+                print('[DBS2] Created ashtrail_runs table')
+            except Exception as create_err:
+                print('[DBS2] ensure_ashtrail_tables: create_all failed:', create_err)
+
+
 def get_current_player():
     """Get DBS2Player for current authenticated user, create if doesn't exist.
     If table is missing, create_all() and retry once.
@@ -620,6 +634,34 @@ class _MinigamesResource(Resource):
         return {'minigames_completed': format_minigames(player)}, 200
 
 
+class _MinigameCompleteResource(Resource):
+    """Mark a single minigame as complete (POST body: { minigame: 'ash_trail' })"""
+
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/minigames/complete - Mark one minigame complete"""
+        player = get_current_player()
+        if not player:
+            return {'error': 'Not authenticated'}, 401
+
+        data = request.get_json() or {}
+        minigame = (data.get('minigame') or '').strip()
+
+        field_map = {
+            'crypto_miner': 'completed_crypto_miner',
+            'infinite_user': 'completed_infinite_user',
+            'laundry': 'completed_laundry',
+            'ash_trail': 'completed_ash_trail',
+            'whackarat': 'completed_whackarat'
+        }
+
+        if minigame not in field_map:
+            return {'error': 'Invalid or missing minigame name'}, 400
+
+        player.update({field_map[minigame]: True})
+        return {'minigames_completed': format_minigames(player), 'success': True}, 200
+
+
 class _MinigameRewardResource(Resource):
     """Reward player for minigame completion with appropriate coin"""
     
@@ -749,8 +791,12 @@ class _AshTrailRunsResource(Resource):
     
     def get(self):
         """GET /api/dbs2/ash-trail/runs?book_id=defi_grimoire&limit=10"""
+        ensure_ashtrail_tables()
         book_id = request.args.get('book_id', '')
-        limit = min(int(request.args.get('limit', 10)), 50)
+        try:
+            limit = min(int(request.args.get('limit', 10) or 10), 50)
+        except (ValueError, TypeError):
+            limit = 10
         
         query = AshTrailRun.query
         if book_id:
@@ -766,9 +812,10 @@ class _AshTrailRunsResource(Resource):
     @token_required()
     def post(self):
         """POST /api/dbs2/ash-trail/runs - Submit a run"""
+        ensure_ashtrail_tables()
         player = get_current_player()
         if not player:
-            return {'error': 'Not authenticated'}, 401
+            return {'error': 'Not authenticated', 'message': 'Please log in to save your Ash Trail run'}, 401
         
         data = request.get_json()
         book_id = data.get('book_id', '')
@@ -788,7 +835,7 @@ class _AshTrailRunsResource(Resource):
         db.session.add(run)
         db.session.commit()
         
-        return {'run': run.read(include_trace=True)}, 201
+        return {'success': True, 'run': run.read(include_trace=True)}, 201
 
 
 class _AshTrailRunDetailResource(Resource):
@@ -796,6 +843,7 @@ class _AshTrailRunDetailResource(Resource):
     
     def get(self, run_id):
         """GET /api/dbs2/ash-trail/runs/<run_id>"""
+        ensure_ashtrail_tables()
         run = AshTrailRun.query.get(run_id)
         if not run:
             return {'error': 'Run not found'}, 404
@@ -1427,6 +1475,7 @@ api.add_resource(_CryptoResource, '/crypto')
 api.add_resource(_InventoryResource, '/inventory')
 api.add_resource(_ScoresResource, '/scores')
 api.add_resource(_MinigamesResource, '/minigames')
+api.add_resource(_MinigameCompleteResource, '/minigames/complete')
 api.add_resource(_MinigameRewardResource, '/minigame/reward')
 
 # Wallet endpoints (authenticated)
