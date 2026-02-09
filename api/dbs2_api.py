@@ -1408,16 +1408,31 @@ SHOP_ITEMS = {
         'price_coin': 'ethereum',
         'price_amount': 0.0005,
         'scrap_field': '_scrap_infinite_user'
+    },
+    'character_pink_princess': {
+        'id': 'character_pink_princess',
+        'name': 'Pink Princess',
+        'type': 'character',
+        'coin': 'dogecoin',
+        'price': 500
+    },
+    'character_yellow_princess': {
+        'id': 'character_yellow_princess',
+        'name': 'Yellow Princess',
+        'type': 'character',
+        'coin': 'solana',
+        'price': 2
     }
 }
 
 
+
 class _ShopPurchaseResource(Resource):
-    """Handle shop purchases - sets scrap ownership field instead of adding to inventory"""
+    """Handle shop purchases - sets scrap ownership field OR adds character to inventory"""
     
     @token_required()
     def post(self):
-        """POST /api/dbs2/shop/purchase - Buy a code scrap from the shop"""
+        """POST /api/dbs2/shop/purchase - Buy an item from the shop"""
         try:
             player = get_current_player()
             if not player:
@@ -1428,59 +1443,116 @@ class _ShopPurchaseResource(Resource):
             
             # Validate item exists
             if item_id not in SHOP_ITEMS:
-                return {'error': 'Invalid item'}, 400
+                return {'error': f'Invalid item: {item_id}'}, 400
             
             item = SHOP_ITEMS[item_id]
-            price_coin = item['price_coin']
-            price_amount = item['price_amount']
-            scrap_field = item.get('scrap_field')
             
-            # Check if player already owns this scrap (via scrap field)
-            if scrap_field and hasattr(player, scrap_field):
-                if getattr(player, scrap_field, False):
-                    return {'error': 'You already own this code scrap'}, 400
-            
-            # Get player's balance for the required coin
-            coin_config = SUPPORTED_COINS.get(price_coin)
-            if not coin_config:
-                return {'error': 'Invalid coin type'}, 400
-            
-            coin_field = coin_config.get('field')
-            current_balance = getattr(player, coin_field, 0) or 0
-            
-            # Check if player can afford
-            if current_balance < price_amount:
+            # Handle different item types
+            if item.get('type') == 'character':
+                # Character purchase
+                price_coin = item['coin']
+                price_amount = item['price']
+                
+                # Check if player already owns this character
+                inventory = player.inventory or []
+                already_owned = any(
+                    inv_item.get('id') == item_id 
+                    for inv_item in inventory 
+                    if isinstance(inv_item, dict)
+                )
+                
+                if already_owned:
+                    return {'error': 'You already own this character'}, 400
+                
+                # Get coin config and check balance
+                coin_config = SUPPORTED_COINS.get(price_coin)
+                if not coin_config:
+                    return {'error': 'Invalid coin type'}, 400
+                
+                coin_field = coin_config.get('field')
+                current_balance = getattr(player, coin_field, 0) or 0
+                
+                # Check if player can afford
+                if current_balance < price_amount:
+                    return {
+                        'error': f'Insufficient {price_coin}. Need {price_amount}, have {current_balance}'
+                    }, 400
+                
+                # Deduct the price
+                new_balance = current_balance - price_amount
+                setattr(player, coin_field, new_balance)
+                
+                # Add character to inventory
+                inventory.append({
+                    'id': item['id'],
+                    'name': item['name'],
+                    'type': 'character',
+                    'purchased_at': datetime.utcnow().isoformat()
+                })
+                player.inventory = inventory
+                
+                db.session.commit()
+                
                 return {
-                    'error': f'Insufficient {price_coin}. Need {price_amount}, have {current_balance}'
-                }, 400
+                    'success': True,
+                    'message': f"Purchased {item['name']}",
+                    'item_id': item_id,
+                    'item_name': item['name'],
+                    'new_balance': new_balance,
+                    'coin': price_coin
+                }, 200
             
-            # Deduct the price
-            new_balance = current_balance - price_amount
-            setattr(player, coin_field, new_balance)
-            
-            # Mark scrap as owned (set the scrap field to True)
-            if scrap_field and hasattr(player, scrap_field):
-                setattr(player, scrap_field, True)
-            
-            db.session.commit()
-            
-            return {
-                'success': True,
-                'message': f"Purchased {item['name']}",
-                'item_id': item_id,
-                'item_name': item['name'],
-                'new_balance': new_balance,
-                'coin': price_coin,
-                'scrap_owned': True,
-                'scraps_owned': format_scraps_owned(player)
-            }, 200
+            else:
+                # Code scrap purchase (existing code)
+                price_coin = item['price_coin']
+                price_amount = item['price_amount']
+                scrap_field = item.get('scrap_field')
+                
+                # Check if player already owns this scrap
+                if scrap_field and hasattr(player, scrap_field):
+                    if getattr(player, scrap_field, False):
+                        return {'error': 'You already own this code scrap'}, 400
+                
+                # Get player's balance
+                coin_config = SUPPORTED_COINS.get(price_coin)
+                if not coin_config:
+                    return {'error': 'Invalid coin type'}, 400
+                
+                coin_field = coin_config.get('field')
+                current_balance = getattr(player, coin_field, 0) or 0
+                
+                # Check if player can afford
+                if current_balance < price_amount:
+                    return {
+                        'error': f'Insufficient {price_coin}. Need {price_amount}, have {current_balance}'
+                    }, 400
+                
+                # Deduct the price
+                new_balance = current_balance - price_amount
+                setattr(player, coin_field, new_balance)
+                
+                # Mark scrap as owned
+                if scrap_field and hasattr(player, scrap_field):
+                    setattr(player, scrap_field, True)
+                
+                db.session.commit()
+                
+                return {
+                    'success': True,
+                    'message': f"Purchased {item['name']}",
+                    'item_id': item_id,
+                    'item_name': item['name'],
+                    'new_balance': new_balance,
+                    'coin': price_coin,
+                    'scrap_owned': True,
+                    'scraps_owned': format_scraps_owned(player)
+                }, 200
             
         except Exception as e:
             db.session.rollback()
             import traceback
             traceback.print_exc()
             return {'error': str(e)}, 500
-
 
 class _ShopItemsResource(Resource):
     """Get available shop items with ownership status"""
@@ -1526,7 +1598,104 @@ class _ShopItemsResource(Resource):
             import traceback
             traceback.print_exc()
             return {'error': str(e)}, 500
+class _EquipCharacterResource(Resource):
+    """Equip a character from inventory"""
+    
+    @token_required()
+    def post(self):
+        """POST /api/dbs2/equip_character"""
+        try:
+            player = get_current_player()
+            if not player:
+                return {'error': 'Player not found'}, 404
+            
+            data = request.get_json() or {}
+            character_id = data.get('character_id')
+            
+            if not character_id:
+                return {'error': 'character_id required'}, 400
+            
+            # Default character is always owned
+            if character_id == 'chillguy':
+                player.equipped_character = character_id
+                db.session.commit()
+                return {'success': True, 'equipped_character': character_id}, 200
+            
+            # Check if player owns this character
+            inventory = player.inventory or []
+            owned = any(
+                item.get('id') == character_id or 
+                item.get('id') == f'character_{character_id}'
+                for item in inventory
+                if isinstance(item, dict) and item.get('type') == 'character'
+            )
+            
+            if not owned:
+                return {'error': 'Character not owned'}, 403
+            
+            # Equip it
+            player.equipped_character = character_id
+            db.session.commit()
+            
+            return {'success': True, 'equipped_character': character_id}, 200
+            
+        except Exception as e:
+            db.session.rollback()
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e)}, 500
 
+
+class _GetEquippedCharacterResource(Resource):
+    """Get currently equipped character"""
+    
+    @token_required()
+    def get(self):
+        """GET /api/dbs2/equipped_character"""
+        try:
+            player = get_current_player()
+            if not player:
+                return {'error': 'Player not found'}, 404
+            
+            equipped = player.equipped_character or 'chillguy'
+            return {'equipped_character': equipped}, 200
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e)}, 500
+
+
+class _GetOwnedCharactersResource(Resource):
+    """Get list of owned characters"""
+    
+    @token_required()
+    def get(self):
+        """GET /api/dbs2/owned_characters"""
+        try:
+            player = get_current_player()
+            if not player:
+                return {'error': 'Player not found'}, 404
+            
+            # Always include default
+            owned = ['chillguy']
+            
+            # Add purchased characters
+            inventory = player.inventory or []
+            for item in inventory:
+                if isinstance(item, dict) and item.get('type') == 'character':
+                    char_id = item.get('id', '')
+                    if char_id.startswith('character_'):
+                        char_id = char_id.replace('character_', '')
+                    if char_id and char_id not in owned:
+                        owned.append(char_id)
+            
+            return {'owned_characters': owned}, 200
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e)}, 500
 
 # ============================================================================
 # REGISTER ALL ROUTES
@@ -1549,6 +1718,11 @@ api.add_resource(_WalletConvertResource, '/wallet/convert')
 # Shop endpoints (authenticated)
 api.add_resource(_ShopPurchaseResource, '/shop/purchase')
 api.add_resource(_ShopItemsResource, '/shop/items')
+
+# Character management endpoints )
+api.add_resource(_EquipCharacterResource, '/equip_character')
+api.add_resource(_GetEquippedCharacterResource, '/equipped_character')
+api.add_resource(_GetOwnedCharactersResource, '/owned_characters')
 
 # Public endpoints
 api.add_resource(_LeaderboardResource, '/leaderboard')
