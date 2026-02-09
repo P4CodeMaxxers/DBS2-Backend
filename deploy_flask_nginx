@@ -13,6 +13,17 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
     }
 
+    # Proxy DBS2 multiplayer WebSocket (chat) to 8765
+    location /dbs2-ws {
+        proxy_pass http://localhost:8765/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
+    }
+
     # Proxy all other traffic to Flask app on 8403
     location / {
         proxy_pass http://localhost:8403;
@@ -60,6 +71,17 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # Proxy DBS2 multiplayer WebSocket (chat) to 8765
+    location /dbs2-ws {
+        proxy_pass http://localhost:8765/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400;
     }
 
     # Proxy all other traffic to Flask app on 8403
