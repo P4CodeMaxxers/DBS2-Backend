@@ -910,11 +910,17 @@ class _AshTrailRunDetailResource(Resource):
 
 
 class _AshTrailAIResource(Resource):
-    """AI endpoint for Ash Trail (optional feedback, no auth required for guests)"""
+    """AI endpoint for Ash Trail (returns routing tips; no auth required)"""
     
     def post(self):
         """POST /api/dbs2/ash-trail/ai"""
-        return {'message': 'AI analysis not implemented'}, 501
+        data = request.get_json() or {}
+        score = float(data.get('score', 0))
+        if score >= 80:
+            return {'message': 'Great run!', 'dialogue': 'Optimal routing achieved.', 'page_text': 'Your path efficiency minimizes slippage. In DeFi, this skill directly translates to better swap rates.'}, 200
+        if score >= 60:
+            return {'message': 'Good run!', 'dialogue': 'Solid routing.', 'page_text': 'AMM routing tip: Multi-hop routes through liquidity pools often get better prices than direct swaps. Keep practicing!'}, 200
+        return {'message': 'Keep practicing!', 'dialogue': 'Trace the optimal path.', 'page_text': 'In DeFi, the path you take through liquidity pools matters. Direct swaps can have high slippage; follow the green trail for better results.'}, 200
 
 
 # ============================================================================
