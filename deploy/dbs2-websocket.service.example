@@ -1,0 +1,25 @@
+# Example systemd unit for DBS2 WebSocket chat server (port 8765).
+# On the server:
+#   1. Copy to systemd: sudo cp deploy/dbs2-websocket.service.example /etc/systemd/system/dbs2-websocket.service
+#   2. Edit paths if needed (User, WorkingDirectory, ExecStart).
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable dbs2-websocket
+#   5. sudo systemctl start dbs2-websocket
+#   6. sudo systemctl status dbs2-websocket
+
+[Unit]
+Description=DBS2 Multiplayer WebSocket Chat Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/path/to/DBS2-Backend
+Environment=WS_HOST=0.0.0.0
+Environment=WS_PORT=8765
+ExecStart=/path/to/DBS2-Backend/venv/bin/python3 socket/dbs2_websocket_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
