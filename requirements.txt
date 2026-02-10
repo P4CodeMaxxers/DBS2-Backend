@@ -1,5 +1,6 @@
 Flask
 requests
+websockets
 SQLAlchemy
 Werkzeug
 Flask_Login

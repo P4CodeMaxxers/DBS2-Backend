@@ -2,6 +2,26 @@
 
 The DBS2 chat box uses a **separate WebSocket server** (not Flask). It must be running on the same machine as the backend for chat to work on the live site.
 
+## 404 on wss://.../dbs2-ws – Checklist
+
+If you see **"WebSocket connection failed: 404"** on the deployed site:
+
+1. **WebSocket process must be running on the server** (port 8765).  
+   See options below (run_with_websocket.sh or systemd).
+
+2. **Nginx must proxy `/dbs2-ws` for HTTPS.**  
+   The browser uses `wss://` (port 443). Your **HTTPS** server block for `dbs2.opencodingsociety.com` must include the same `location /dbs2-ws { ... }` as in `deploy_flask_nginx`.  
+   If you use certbot/Let’s Encrypt, the live config is often in something like `/etc/nginx/sites-enabled/dbs2.opencodingsociety.com` or a snippet under `sites-enabled`. **Add the `/dbs2-ws` block there** (see `deploy/nginx-https-dbs2-ws.snippet`), then run:
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+3. **Confirm something is listening on 8765** on the server:
+   ```bash
+   curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" -H "Host: dbs2.opencodingsociety.com" http://localhost:8765/
+   ```
+   You should get a 426 or 101, not "Connection refused".
+
 ## Why it works on localhost but not on the deployed site
 
 - **Local:** You run `python3 socket/dbs2_websocket_server.py` (or `./socket/run_websocket.sh`), so something is listening on port 8765.
