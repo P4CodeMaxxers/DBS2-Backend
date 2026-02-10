@@ -1083,6 +1083,32 @@ class _AdminPlayerDetail(Resource):
             traceback.print_exc()
             return {'error': str(e)}, 500
 
+    def delete(self, user_id):
+        """DELETE /api/dbs2/admin/player/<user_id> - Remove player from leaderboard and delete their DBS2 data."""
+        try:
+            ensure_ashtrail_tables()  # ensure guest_name column exists before querying AshTrailRun
+            user = User.query.filter_by(_uid=user_id).first()
+            if not user:
+                try:
+                    user = User.query.get(int(user_id))
+                except (ValueError, TypeError):
+                    pass
+            if not user:
+                return {'error': 'User not found'}, 404
+
+            player = DBS2Player.get_by_user_id(user.id)
+            if player:
+                db.session.delete(player)
+            for run in AshTrailRun.query.filter_by(user_id=user.id).all():
+                db.session.delete(run)
+            db.session.commit()
+            return {'message': f'Player {user_id} removed from leaderboard', 'deleted': True}, 200
+        except Exception as e:
+            db.session.rollback()
+            import traceback
+            traceback.print_exc()
+            return {'error': str(e)}, 500
+
 
 class _AdminStats(Resource):
     """Get overall game statistics"""

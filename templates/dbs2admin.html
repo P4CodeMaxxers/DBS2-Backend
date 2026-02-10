@@ -532,6 +532,7 @@ function renderPlayers() {
                     <button class="btn btn-sm btn-warning" onclick="openEditCrypto('${uid}', '${name}', ${p.crypto || 0})">💰</button>
                     <button class="btn btn-sm btn-success" onclick="openEditInventory('${uid}', '${name}')">📦</button>
                     <button class="btn btn-sm btn-outline-light" onclick="quickAdd('${uid}', 50)">+50</button>
+                    <button class="btn btn-sm btn-danger" onclick="deletePlayer('${uid.replace(/'/g, "\\'")}', '${(name || "").replace(/'/g, "\\'")}')" title="Remove from leaderboard">🗑️</button>
                 </td>
             </tr>`;
         }).join('');
@@ -571,6 +572,20 @@ function renderMinigameBadges(p) {
 }
 
 // ============ VIEW PLAYER ============
+
+async function deletePlayer(uid, name) {
+    if (!confirm(`Remove "${name}" (${uid}) from the leaderboard? This deletes their DBS2 player data and Ash Trail runs.`)) return;
+    try {
+        const response = await fetch(`${API_BASE}/admin/player/${encodeURIComponent(uid)}`, { method: 'DELETE' });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || err.message || 'Delete failed');
+        }
+        refreshAll();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
 
 async function viewPlayer(uid) {
     try {
