@@ -95,6 +95,16 @@ _price_cache = {
     'cache_duration': timedelta(minutes=2)
 }
 
+# Fallback sats per coin when price API fails (approx ratios so convert still works)
+FALLBACK_SATS_PER_COIN = {
+    'satoshis': 1,
+    'bitcoin': 100_000_000,
+    'ethereum': 15_000_000,   # ~0.15 BTC
+    'solana': 500_000,        # ~0.005 BTC
+    'cardano': 50_000,        # ~0.0005 BTC
+    'dogecoin': 25_000,       # ~0.00025 BTC
+}
+
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -276,19 +286,19 @@ def fetch_coin_prices():
 
 
 def calculate_sats_per_coin(coin_id, prices):
-    """Calculate how many satoshis one unit of a coin is worth"""
+    """Calculate how many satoshis one unit of a coin is worth. Uses fallback when price API fails."""
     if coin_id == 'satoshis':
         return 1
     if coin_id == 'bitcoin':
         return 100_000_000
     
-    btc_price = prices.get('bitcoin', {}).get('usd', 1)
+    btc_price = prices.get('bitcoin', {}).get('usd', 0) or 1
     coin_price = prices.get(coin_id, {}).get('usd', 0)
     
-    if btc_price <= 0 or coin_price <= 0:
-        return 0
-    
-    return int((coin_price / btc_price) * 100_000_000)
+    if btc_price > 0 and coin_price > 0:
+        return int((coin_price / btc_price) * 100_000_000)
+    # When CoinGecko is down or returns empty, use fallback so convert still works
+    return FALLBACK_SATS_PER_COIN.get(coin_id, 0)
 
 
 # ============================================================================
@@ -448,7 +458,7 @@ class _WalletConvertResource(Resource):
     
     @token_required()
     def post(self):
-        """POST /api/dbs2/wallet/convert - Convert coin to satoshis"""
+        """POST /api/dbs2/wallet/convert - Convert between coins (e.g. satoshis <-> SOL). 5% fee."""
         player = get_current_player()
         if not player:
             return {'error': 'Not authenticated'}, 401
@@ -456,7 +466,9 @@ class _WalletConvertResource(Resource):
         data = request.get_json()
         from_coin = data.get('from_coin') or data.get('coin')
         to_coin = data.get('to_coin', 'satoshis')
-        amount = float(data.get('amount', 0))
+        raw_amount = data.get('amount', 0)
+        # Satoshis are integers; use int for from_coin satoshis so deduction is exact
+        amount = int(raw_amount) if from_coin == 'satoshis' else float(raw_amount)
         
         if from_coin not in SUPPORTED_COINS:
             return {'error': f'Unknown source coin: {from_coin}'}, 400
@@ -483,7 +495,7 @@ class _WalletConvertResource(Resource):
             return {'error': 'Cannot determine conversion rate'}, 400
         
         # Calculate: amount * from_rate / to_rate * (1 - fee)
-        sats_value = amount * from_sats
+        sats_value = float(amount) * from_sats
         fee_rate = 0.05  # 5% fee
         sats_after_fee = sats_value * (1 - fee_rate)
         
