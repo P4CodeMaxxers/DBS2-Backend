@@ -62,85 +62,68 @@ class UserAPI:
             
             return jsonify(results) 
             
-    class _CRUD(Resource):  # Users API operation for Create, Read, Update, Delete 
-        def post(self): # Create method
-            """
-            Create a new user.
+    class _CRUD(Resource):  # Users API operation for Create, Read, Update, Delete
 
-            Reads data from the JSON body of the request, validates the input, and creates a new user in the database.
+        # ── SRP helpers ──────────────────────────────────────────
 
-            Returns:
-                JSON response with the created user details or an error message.
-            """
-            
-            # Read data for json body
-            body = request.get_json()
-            
-            ''' Avoid garbage in, error checking '''
-            # validate name
+        @staticmethod
+        def _validate_user_input(body):
+            """Validate required fields for user creation.
+            Returns (name, uid, password) or raises ValueError."""
             name = body.get('name')
             if name is None or len(name) < 2:
-                return {'message': f'Name is missing, or is less than 2 characters'}, 400
-            
-            # validate uid
+                raise ValueError('Name is missing, or is less than 2 characters')
             uid = body.get('uid')
             if uid is None or len(uid) < 2:
-                return {'message': f'User ID is missing, or is less than 2 characters'}, 400
-          
-            # DISABLED: GitHub validation not needed for DBS2
-            # _, status = GitHubUser().get(uid)
-            # if status != 200:
-            #     return {'message': f'User ID {uid} not a valid GitHub account' }, 404
-            
-            ''' User object creation '''
-            #1: Setup minimal User object using __init__ method
+                raise ValueError('User ID is missing, or is less than 2 characters')
             password = body.get('password')
             if password is not None:
                 if len(password) < 8 and not password.startswith("pbkdf2:sha256:"):
-                    return {'message': 'Password must be at least 8 characters'}, 400
-                user_obj = User(name=name, uid=uid, password=password)
-            else:
-                user_obj = User(name=name, uid=uid)
-            
-            # Handle additional fields that frontend sends
-            # Create a cleaned body with only the fields User model expects
-            cleaned_body = {
+                    raise ValueError('Password must be at least 8 characters')
+            return name, uid, password
+
+        @staticmethod
+        def _clean_request_body(body, name, uid, password):
+            """Build a dict of only the fields the User model expects, dropping Nones."""
+            cleaned = {
                 'name': name,
                 'uid': uid,
                 'password': password,
                 'email': body.get('email'),
             }
-            
-            # Add optional fields if they exist
-            if body.get('sid'):
-                cleaned_body['sid'] = body.get('sid')
-            if body.get('school'):
-                cleaned_body['school'] = body.get('school')
-            if body.get('kasm_server_needed') is not None:
-                cleaned_body['kasm_server_needed'] = body.get('kasm_server_needed')
-            # Support assigning classes (e.g. ["CSSE","CSP","CSA"]).
-            # Accept either a list or a single string.
-            if body.get('class') is not None:
-                cleaned_body['class'] = body.get('class')
-            
-            # Remove None values
-            cleaned_body = {k: v for k, v in cleaned_body.items() if v is not None}
+            optional_fields = {
+                'sid': body.get('sid'),
+                'school': body.get('school'),
+                'kasm_server_needed': body.get('kasm_server_needed'),
+                'class': body.get('class'),
+            }
+            cleaned.update({k: v for k, v in optional_fields.items() if v is not None})
+            return {k: v for k, v in cleaned.items() if v is not None}
 
-            #2: Save the User object to the database using custom create method
+        @staticmethod
+        def _create_and_persist_user(name, uid, password, cleaned_body):
+            """Instantiate a User, persist it, and return the created record."""
+            user_obj = User(name=name, uid=uid, password=password) if password else User(name=name, uid=uid)
+            user = user_obj.create(cleaned_body)
+            if not user:
+                db_user = User.query.filter_by(_uid=uid).first()
+                if db_user:
+                    return db_user
+                raise ValueError(f'Processed {name}, either a format error or User ID {uid} is duplicate')
+            return user
+
+        # ── Orchestrator ─────────────────────────────────────────
+
+        def post(self):
+            """Create a new user."""
+            body = request.get_json()
             try:
-                user = user_obj.create(cleaned_body) # pass the cleaned body elements to be saved in the database
-                
-                if not user:
-                    # Check if user was actually created in database despite create() returning None
-                    db_user = User.query.filter_by(_uid=uid).first()
-                    if db_user:
-                        return jsonify(db_user.read())  # Return the user anyway
-                    else:
-                        return {'message': f'Processed {name}, either a format error or User ID {uid} is duplicate'}, 400
-                
-                # return response, the created user details as a JSON object
+                name, uid, password = self._validate_user_input(body)
+                cleaned_body = self._clean_request_body(body, name, uid, password)
+                user = self._create_and_persist_user(name, uid, password, cleaned_body)
                 return jsonify(user.read())
-                
+            except ValueError as ve:
+                return {'message': str(ve)}, 400
             except Exception as e:
                 return {'message': f'Error creating user: {str(e)}'}, 500
 
@@ -316,96 +299,81 @@ class UserAPI:
             return {'message': f'Sections {sections} deleted successfully'}, 200
 
     class _Security(Resource):
+
+        # ── SRP helpers ──────────────────────────────────────────
+
+        @staticmethod
+        def _validate_login_request(body):
+            """Extract and validate uid/password from the request body.
+            Returns (uid, password) or raises ValueError with a message."""
+            if not body:
+                raise ValueError("Please provide user details")
+            uid = body.get('uid')
+            if uid is None:
+                raise ValueError("User ID is missing")
+            password = body.get('password')
+            if not password:
+                raise ValueError("Password is missing")
+            return uid, password
+
+        @staticmethod
+        def _authenticate_user(uid, password):
+            """Look up the user and verify credentials.
+            Returns a User or raises ValueError."""
+            user = User.query.filter_by(_uid=uid).first()
+            if user is None or not user.is_password(password):
+                raise ValueError("Invalid user id or password")
+            return user
+
+        @staticmethod
+        def _generate_token(user):
+            """Create a signed JWT for the given user."""
+            return jwt.encode(
+                {"_uid": user._uid,
+                 "exp": datetime.now(timezone.utc) + timedelta(hours=12000)},
+                current_app.config["SECRET_KEY"],
+                algorithm="HS256",
+            )
+
+        @staticmethod
+        def _build_auth_response(user, token):
+            """Build a JSON response with the token set as a cookie."""
+            response_data = {
+                "message": f"Authentication for {user._uid} successful",
+                "token": token,
+                "user": {
+                    "uid": user._uid,
+                    "name": user.name,
+                    "role": user.role,
+                    "class": user._class if getattr(user, '_class', None) is not None else []
+                }
+            }
+            resp = jsonify(response_data)
+
+            is_production = not (request.host.startswith('localhost') or request.host.startswith('127.0.0.1'))
+            resp.set_cookie(
+                current_app.config["JWT_TOKEN_NAME"],
+                token,
+                max_age=43200,
+                secure=is_production,
+                httponly=False,
+                path='/',
+                samesite='None' if is_production else 'Lax',
+            )
+            return resp
+
+        # ── Orchestrator ─────────────────────────────────────────
+
         def post(self):
             try:
-                body = request.get_json()
-                if not body:
-                    return {
-                        "message": "Please provide user details",
-                        "data": None,
-                        "error": "Bad request"
-                    }, 400
-                ''' Get Data '''
-                uid = body.get('uid')
-                if uid is None:
-                    return {'message': f'User ID is missing'}, 401
-                password = body.get('password')
-                if not password:
-                    return {'message': f'Password is missing'}, 401
-                            
-                ''' Find user '''
-    
-                user = User.query.filter_by(_uid=uid).first()
-                
-                if user is None or not user.is_password(password):
-                    
-                    return {'message': f"Invalid user id or password"}, 401
-                            
-                # Check if user is found
-                if user:
-                    try:
-                        token = jwt.encode(
-                            {
-                                "_uid": user._uid,
-                                "exp": datetime.now(timezone.utc) + timedelta(hours=12000)
-                            },
-                            current_app.config["SECRET_KEY"],
-                            algorithm="HS256"
-                        )
-                        # Return JSON response with cookie
-                        is_production = not (request.host.startswith('localhost') or request.host.startswith('127.0.0.1'))
-                        
-                        # Create JSON response with token included
-                        response_data = {
-                            "message": f"Authentication for {user._uid} successful",
-                            "token": token,  # ADDED: Include token in response body
-                            "user": {
-                                "uid": user._uid,
-                                "name": user.name,
-                                "role": user.role,
-                                "class": user._class if getattr(user, '_class', None) is not None else []
-                            }
-                        }
-                        resp = jsonify(response_data)
-                        
-                        # Still set cookie for backward compatibility
-                        if is_production:
-                            resp.set_cookie(
-                                current_app.config["JWT_TOKEN_NAME"],
-                                token,
-                                max_age=43200,
-                                secure=True,
-                                httponly=False,
-                                path='/',
-                                samesite='None'
-                            )
-                        else:
-                            resp.set_cookie(
-                                current_app.config["JWT_TOKEN_NAME"],
-                                token,
-                                max_age=43200,
-                                secure=False,
-                                httponly=False,
-                                path='/',
-                                samesite='Lax'
-                            )
-                        return resp 
-                    except Exception as e:
-                        return {
-                                        "error": "Something went wrong",
-                                        "message": str(e)
-                                    }, 500
-                return {
-                                "message": "Error fetching auth token!",
-                                "data": None,
-                                "error": "Unauthorized"
-                            }, 404
+                uid, password = self._validate_login_request(request.get_json())
+                user = self._authenticate_user(uid, password)
+                token = self._generate_token(user)
+                return self._build_auth_response(user, token)
+            except ValueError as ve:
+                return {"message": str(ve)}, 401
             except Exception as e:
-                 return {
-                                "message": "Something went wrong!",
-                                "error": str(e),
-                                "data": None
-                            }, 500
+                return {"message": "Something went wrong!", "error": str(e)}, 500
                  
         @token_required()
         def delete(self):

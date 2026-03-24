@@ -378,88 +378,81 @@ class User(db.Model, UserMixin):
         data.update(personas)
         return data
         
-    # CRUD update: updates user name, password, phone
-    # returns self
-    def update(self, inputs):
-        if not isinstance(inputs, dict):
-            return self
+    # ── SRP helpers for update() ───────────────────────────────────
 
-        name = inputs.get("name", "")
-        uid = inputs.get("uid", "")
-        email = inputs.get("email", "")
-        sid = inputs.get("sid", "")
+    def _apply_field_updates(self, inputs):
+        """Apply simple field updates from inputs dict. Returns the raw password value (needed by Kasm sync)."""
         password = inputs.get("password", "")
-        pfp = inputs.get("pfp", None)
-        kasm_server_needed = inputs.get("kasm_server_needed", None)
-        grade_data = inputs.get("grade_data", None)
-        ap_exam = inputs.get("ap_exam", None)
-        class_list = inputs.get("class", None) or inputs.get("_class", None)
-        school = inputs.get("school", None)
-        # States before update
-        old_uid = self.uid
-        old_kasm_server_needed = self.kasm_server_needed
 
-        # Update table with new data
-        if name:
-            self.name = name
-        if uid:
-            self.set_uid(uid)
-        if email:
-            self.email = email
-        if sid:
-            self.sid = sid
+        if inputs.get("name"):
+            self.name = inputs["name"]
+        if inputs.get("uid"):
+            self.set_uid(inputs["uid"])
+        if inputs.get("email"):
+            self.email = inputs["email"]
+        if inputs.get("sid"):
+            self.sid = inputs["sid"]
         if password:
             self.set_password(password)
-        if pfp is not None:
-            self.pfp = pfp
-        if kasm_server_needed is not None:
-            self.kasm_server_needed = bool(kasm_server_needed)
-        if grade_data is not None:
-            self.grade_data = grade_data
-        if ap_exam is not None:
-            self.ap_exam = ap_exam
+        if inputs.get("pfp") is not None:
+            self.pfp = inputs["pfp"]
+        if inputs.get("kasm_server_needed") is not None:
+            self.kasm_server_needed = bool(inputs["kasm_server_needed"])
+        if inputs.get("grade_data") is not None:
+            self.grade_data = inputs["grade_data"]
+        if inputs.get("ap_exam") is not None:
+            self.ap_exam = inputs["ap_exam"]
+
+        class_list = inputs.get("class") or inputs.get("_class")
         if class_list is not None:
-            # Ensure class_list is a list; accept a single string as convenience
-            if isinstance(class_list, str):
-                self._class = [class_list]
-            else:
-                self._class = class_list
-        if school is not None:
-            self.school = school
+            self._class = [class_list] if isinstance(class_list, str) else class_list
+        if inputs.get("school") is not None:
+            self.school = inputs["school"]
 
-        # Check this on each update
-        if not email:
-            if email == "?":
-                self.set_email()
+        # Auto-fetch email from GitHub when explicitly requested
+        if not inputs.get("email") and inputs.get("email") == "?":
+            self.set_email()
 
-        # Make a KasmUser object to interact with the Kasm API
-        # Wrap in try-except to ensure db.session.commit() occurs even if Kasm operations fail
+        return password
+
+    def _sync_kasm_state(self, old_uid, old_kasm_server_needed, password):
+        """Synchronise the user's Kasm server account after field updates."""
         try:
             kasm_user = KasmUser()
 
-            # Update Kasm server group membership if needed
             if self.kasm_server_needed:
-                # UID has changed, delete old Kasm user if it exists
                 if old_uid != self.uid:
                     kasm_user.delete(old_uid)
-                # Create or update the user in Kasm, including a password
                 kasm_user.post(self.name, self.uid, password if password else app.config["DEFAULT_PASSWORD"])
-                # User is transtioning from non-Kasm to Kasm user, thus it requires posting all groups to Kasm
                 if not old_kasm_server_needed:
                     kasm_user.post_groups(self.uid, [section.abbreviation for section in self.sections])
-            # User is transitioning from Kasm user to non-Kasm user, thus it requires cleanup of defunct Kasm user
             elif old_kasm_server_needed:
                 kasm_user.delete(self.uid)
         except Exception as e:
-            # Log the error but continue to db.session.commit()
             print(f"Kasm API error for user {self.uid}: {e}")
 
+    def _commit_update(self):
+        """Commit the current session; rollback on integrity error."""
         try:
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
             return None
         return self
+
+    # ── Orchestrator ─────────────────────────────────────────────
+
+    def update(self, inputs):
+        """CRUD update: orchestrates field updates, Kasm sync, and DB commit."""
+        if not isinstance(inputs, dict):
+            return self
+
+        old_uid = self.uid
+        old_kasm_server_needed = self.kasm_server_needed
+
+        password = self._apply_field_updates(inputs)
+        self._sync_kasm_state(old_uid, old_kasm_server_needed, password)
+        return self._commit_update()
     
     # CRUD delete: remove self
     # None
