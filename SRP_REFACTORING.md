@@ -1,260 +1,25 @@
-# Single Responsibility Principle (SRP) Refactoring — Before & After
+# Single Responsibility Principle (SRP) Refactoring — LaundryGame.js
 
-This document shows the functions that were refactored across both the **DBS2-Backend** and **DBS2-Frontend** repositories to follow the Single Responsibility Principle using the **orchestrator + helpers** pattern.
-
----
-
-## Backend — `model/user.py` → `User.update()`
-
-### Before (80 lines, 4+ responsibilities)
-
-```python
-def update(self, inputs):
-    if not isinstance(inputs, dict):
-        return self
-
-    name = inputs.get("name", "")
-    uid = inputs.get("uid", "")
-    email = inputs.get("email", "")
-    sid = inputs.get("sid", "")
-    password = inputs.get("password", "")
-    pfp = inputs.get("pfp", None)
-    kasm_server_needed = inputs.get("kasm_server_needed", None)
-    grade_data = inputs.get("grade_data", None)
-    ap_exam = inputs.get("ap_exam", None)
-    class_list = inputs.get("class", None) or inputs.get("_class", None)
-    school = inputs.get("school", None)
-    old_uid = self.uid
-    old_kasm_server_needed = self.kasm_server_needed
-
-    if name:
-        self.name = name
-    if uid:
-        self.set_uid(uid)
-    if email:
-        self.email = email
-    # ... 15 more field updates ...
-    if school is not None:
-        self.school = school
-
-    if not email:
-        if email == "?":
-            self.set_email()
-
-    try:
-        kasm_user = KasmUser()
-        if self.kasm_server_needed:
-            if old_uid != self.uid:
-                kasm_user.delete(old_uid)
-            kasm_user.post(self.name, self.uid, password if password else ...)
-            if not old_kasm_server_needed:
-                kasm_user.post_groups(self.uid, [...])
-        elif old_kasm_server_needed:
-            kasm_user.delete(self.uid)
-    except Exception as e:
-        print(f"Kasm API error for user {self.uid}: {e}")
-
-    try:
-        db.session.commit()
-    except IntegrityError:
-        db.session.rollback()
-        return None
-    return self
-```
-
-**Violations:** Field extraction + field application + Kasm API sync + DB commit all in one function.
-
-### After (orchestrator + 3 helpers)
-
-```python
-def _apply_field_updates(self, inputs):
-    """Apply simple field updates from inputs dict."""
-    # Each field update in one place
-    ...
-
-def _sync_kasm_state(self, old_uid, old_kasm_server_needed, password):
-    """Synchronise the user's Kasm server account after field updates."""
-    ...
-
-def _commit_update(self):
-    """Commit the current session; rollback on integrity error."""
-    ...
-
-def update(self, inputs):                          # ← orchestrator
-    if not isinstance(inputs, dict):
-        return self
-    old_uid = self.uid
-    old_kasm_server_needed = self.kasm_server_needed
-    password = self._apply_field_updates(inputs)
-    self._sync_kasm_state(old_uid, old_kasm_server_needed, password)
-    return self._commit_update()
-```
+This document shows how `startValidationGame()` in `LaundryGame.js` was refactored to follow the Single Responsibility Principle using the **orchestrator + helpers** pattern.
 
 ---
 
-## Backend — `api/user.py` → `_Security.post()` (Login)
+## The Problem
 
-### Before (90 lines, 4+ responsibilities)
+`startValidationGame()` was a single **538-line** function that handled six distinct responsibilities:
 
-```python
-def post(self):
-    try:
-        body = request.get_json()
-        if not body:
-            return {"message": "Please provide user details", ...}, 400
-        uid = body.get('uid')
-        if uid is None:
-            return {'message': 'User ID is missing'}, 401
-        password = body.get('password')
-        if not password:
-            return {'message': 'Password is missing'}, 401
+1. Game state initialisation
+2. DOM creation (~250 lines of inline HTML/CSS for overlay, container, header, progress bar, wallet panel, transaction card, action buttons, tips panel, feedback overlay, results screen)
+3. Event handler wiring
+4. Transaction rendering with wallet highlighting and double-spend warnings
+5. Decision handling and feedback display
+6. Results screen with reward claiming via backend API
 
-        user = User.query.filter_by(_uid=uid).first()
-        if user is None or not user.is_password(password):
-            return {'message': "Invalid user id or password"}, 401
-
-        if user:
-            try:
-                token = jwt.encode({"_uid": user._uid, "exp": ...}, ...)
-                is_production = not (request.host.startswith('localhost') ...)
-                response_data = {
-                    "message": f"Authentication for {user._uid} successful",
-                    "token": token,
-                    "user": {"uid": user._uid, "name": user.name, ...}
-                }
-                resp = jsonify(response_data)
-
-                if is_production:
-                    resp.set_cookie(..., secure=True, samesite='None')
-                else:
-                    resp.set_cookie(..., secure=False, samesite='Lax')
-                return resp
-            except Exception as e:
-                return {"error": "Something went wrong", ...}, 500
-        return {"message": "Error fetching auth token!", ...}, 404
-    except Exception as e:
-        return {"message": "Something went wrong!", ...}, 500
-```
-
-**Violations:** Request validation + user lookup/auth + JWT generation + cookie configuration + response building all in one deeply nested function.
-
-### After (orchestrator + 4 static helpers)
-
-```python
-@staticmethod
-def _validate_login_request(body):
-    """Extract and validate uid/password."""
-    ...
-
-@staticmethod
-def _authenticate_user(uid, password):
-    """Look up the user and verify credentials."""
-    ...
-
-@staticmethod
-def _generate_token(user):
-    """Create a signed JWT for the given user."""
-    ...
-
-@staticmethod
-def _build_auth_response(user, token):
-    """Build a JSON response with the token set as a cookie."""
-    ...
-
-def post(self):                                     # ← orchestrator
-    try:
-        uid, password = self._validate_login_request(request.get_json())
-        user = self._authenticate_user(uid, password)
-        token = self._generate_token(user)
-        return self._build_auth_response(user, token)
-    except ValueError as ve:
-        return {"message": str(ve)}, 401
-    except Exception as e:
-        return {"message": "Something went wrong!", "error": str(e)}, 500
-```
+This violates SRP because a change to any one concern (e.g. tweaking the tips panel layout) required navigating a 538-line function and risking unintended side effects on unrelated logic.
 
 ---
 
-## Backend — `api/user.py` → `_CRUD.post()` (User Creation)
-
-### Before (80 lines, 3+ responsibilities)
-
-```python
-def post(self):
-    body = request.get_json()
-    name = body.get('name')
-    if name is None or len(name) < 2:
-        return {'message': 'Name is missing...'}, 400
-    uid = body.get('uid')
-    if uid is None or len(uid) < 2:
-        return {'message': 'User ID is missing...'}, 400
-    password = body.get('password')
-    if password is not None:
-        if len(password) < 8 and not password.startswith("pbkdf2:sha256:"):
-            return {'message': 'Password must be at least 8 characters'}, 400
-        user_obj = User(name=name, uid=uid, password=password)
-    else:
-        user_obj = User(name=name, uid=uid)
-
-    cleaned_body = {'name': name, 'uid': uid, 'password': password, 'email': body.get('email')}
-    if body.get('sid'):
-        cleaned_body['sid'] = body.get('sid')
-    if body.get('school'):
-        cleaned_body['school'] = body.get('school')
-    # ... more optional fields ...
-    cleaned_body = {k: v for k, v in cleaned_body.items() if v is not None}
-
-    try:
-        user = user_obj.create(cleaned_body)
-        if not user:
-            db_user = User.query.filter_by(_uid=uid).first()
-            if db_user:
-                return jsonify(db_user.read())
-            else:
-                return {'message': f'Processed {name}...'}, 400
-        return jsonify(user.read())
-    except Exception as e:
-        return {'message': f'Error creating user: {str(e)}'}, 500
-```
-
-**Violations:** Input validation + body sanitisation + user creation/persistence + error recovery all mixed together.
-
-### After (orchestrator + 3 static helpers)
-
-```python
-@staticmethod
-def _validate_user_input(body):
-    """Validate required fields. Returns (name, uid, password) or raises ValueError."""
-    ...
-
-@staticmethod
-def _clean_request_body(body, name, uid, password):
-    """Build a dict of only the fields the User model expects."""
-    ...
-
-@staticmethod
-def _create_and_persist_user(name, uid, password, cleaned_body):
-    """Instantiate a User, persist it, and return the created record."""
-    ...
-
-def post(self):                                     # ← orchestrator
-    body = request.get_json()
-    try:
-        name, uid, password = self._validate_user_input(body)
-        cleaned_body = self._clean_request_body(body, name, uid, password)
-        user = self._create_and_persist_user(name, uid, password, cleaned_body)
-        return jsonify(user.read())
-    except ValueError as ve:
-        return {'message': str(ve)}, 400
-    except Exception as e:
-        return {'message': f'Error creating user: {str(e)}'}, 500
-```
-
----
-
-## Frontend — `LaundryGame.js` → `startValidationGame()`
-
-### Before (538 lines, 6+ responsibilities)
+## Before (538 lines, 6+ responsibilities)
 
 ```javascript
 function startValidationGame(baseurl, isFirstCompletion, onComplete) {
@@ -262,64 +27,346 @@ function startValidationGame(baseurl, isFirstCompletion, onComplete) {
     const transactions = generateTransactions();
     let currentTxIndex = 0;
     let correctAnswers = 0;
-    ...
+    let totalAnswered = 0;
+    let processedTxIds = new Set();
+    const rewardPerCorrect = 2;
 
     // 2. DOM creation — overlay, container, header, progress bar,
     //    wallet panel, transaction card, action buttons, tips panel,
     //    feedback overlay, results screen (~250 lines of inline HTML/CSS)
     const overlay = document.createElement('div');
-    overlay.style.cssText = `position: fixed; ...`;
-    const container = document.createElement('div');
-    ...
-
-    // 3. Event handler wiring (5 lines)
-    document.getElementById('exit-btn').onclick = () => { ... };
-
-    // 4. Transaction rendering logic — displayTransaction() (~85 lines)
-    function displayTransaction(tx) {
-        // wallet highlighting + double-spend warning + HTML template
+    overlay.id = 'minigame-overlay';
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.85);
         ...
+    `;
+
+    const container = document.createElement('div');
+    container.id = 'minigame-container';
+    container.style.cssText = `
+        width: 95%; max-width: 1000px; height: 90vh;
+        background: linear-gradient(135deg, #0a0a15 0%, #1a1a2e 100%);
+        ...
+    `;
+
+    // Header
+    const header = document.createElement('div');
+    header.style.cssText = `...`;
+    header.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <h1 style="...">📋 TRANSACTION VALIDATOR</h1>
+            ...
+        </div>
+        <button id="exit-btn" style="...">EXIT</button>
+    `;
+    container.appendChild(header);
+
+    // Score/Progress bar
+    const progressBar = document.createElement('div');
+    progressBar.style.cssText = `...`;
+    progressBar.innerHTML = `
+        <div id="progress-text">Transaction <span>1</span> of ${transactions.length}</div>
+        <div id="score-text">Correct: <span id="correct-count">0</span>/${transactions.length}</div>
+        <div id="reward-text">Earned: <span id="earned-ada">0</span> ${COIN_SYMBOL}</div>
+    `;
+    container.appendChild(progressBar);
+
+    // Main game area (~120 lines)
+    const gameArea = document.createElement('div');
+    gameArea.style.cssText = `display: flex; gap: 20px; flex: 1; min-height: 0;`;
+
+    // Left panel - Wallet Balances (~30 lines)
+    const walletPanel = document.createElement('div');
+    walletPanel.style.cssText = `width: 250px; ...`;
+    walletPanel.innerHTML = `
+        <h3>💰 WALLET BALANCES</h3>
+        <div id="wallet-list">
+            ${Object.entries(WALLETS).map(([addr, data]) => `
+                <div id="wallet-${addr}" style="...">
+                    <div>${data.name}</div>
+                    <div>${addr}</div>
+                    <div>Balance: <strong>${data.balance} ADA</strong></div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    gameArea.appendChild(walletPanel);
+
+    // Center panel - Transaction Details + Action Buttons (~40 lines)
+    const txPanel = document.createElement('div');
+    txPanel.style.cssText = `flex: 1; ...`;
+    const txCard = document.createElement('div');
+    txCard.id = 'tx-card';
+    txCard.style.cssText = `...`;
+    txPanel.appendChild(txCard);
+    const actionBar = document.createElement('div');
+    actionBar.innerHTML = `
+        <button id="reject-btn" style="...">✗ REJECT</button>
+        <button id="approve-btn" style="...">✓ APPROVE</button>
+    `;
+    txPanel.appendChild(actionBar);
+    gameArea.appendChild(txPanel);
+
+    // Right panel - Tips (~30 lines)
+    const tipsPanel = document.createElement('div');
+    tipsPanel.style.cssText = `width: 220px; ...`;
+    tipsPanel.innerHTML = `
+        <h3>💡 VALIDATION TIPS</h3>
+        <div>
+            <div>✓ Balance Check — Sender must have enough...</div>
+            <div>✓ Signature — Must match the sender's wallet...</div>
+            <div>✓ Double Spend — Check remaining balance...</div>
+        </div>
+    `;
+    gameArea.appendChild(tipsPanel);
+    container.appendChild(gameArea);
+
+    // Feedback overlay + Results screen (~20 lines)
+    const feedbackOverlay = document.createElement('div');
+    feedbackOverlay.id = 'feedback-overlay';
+    feedbackOverlay.style.cssText = `position: absolute; ... display: none; z-index: 100;`;
+    container.appendChild(feedbackOverlay);
+    const resultsScreen = document.createElement('div');
+    resultsScreen.id = 'results-screen';
+    resultsScreen.style.cssText = `position: absolute; ... display: none; z-index: 200;`;
+    container.appendChild(resultsScreen);
+
+    overlay.appendChild(container);
+    document.body.appendChild(overlay);
+
+    // 3. Event handler wiring
+    document.getElementById('exit-btn').onclick = () => {
+        window.laundryMinigameActive = false;
+        window.minigameActive = false;
+        document.body.removeChild(overlay);
+    };
+    document.getElementById('approve-btn').onclick = () => handleDecision(true);
+    document.getElementById('reject-btn').onclick = () => handleDecision(false);
+
+    displayTransaction(transactions[currentTxIndex]);
+
+    // 4. Transaction rendering (~85 lines)
+    function displayTransaction(tx) {
+        const wallet = WALLETS[tx.from];
+        const toWallet = WALLETS[tx.to];
+
+        // Highlight relevant wallets
+        document.querySelectorAll('[id^="wallet-"]').forEach(el => {
+            el.style.borderLeftColor = '#0033ad';
+            el.style.background = 'rgba(50,50,80,0.3)';
+        });
+        const fromWalletEl = document.getElementById(`wallet-${tx.from}`);
+        const toWalletEl = document.getElementById(`wallet-${tx.to}`);
+        if (fromWalletEl) {
+            fromWalletEl.style.borderLeftColor = '#FF9800';
+            fromWalletEl.style.background = 'rgba(255,152,0,0.15)';
+        }
+        if (toWalletEl) {
+            toWalletEl.style.borderLeftColor = '#4CAF50';
+            toWalletEl.style.background = 'rgba(76,175,80,0.15)';
+        }
+
+        // Check double-spend
+        let doubleSpendWarning = '';
+        if (tx.requiresPriorTx && processedTxIds.has(tx.requiresPriorTx)) {
+            doubleSpendWarning = `<div style="...">⚠️ Note: You previously approved...</div>`;
+        }
+
+        txCard.innerHTML = `
+            <div>📝 Transaction ${tx.id} — PENDING VALIDATION</div>
+            <div style="display: grid; grid-template-columns: 1fr auto 1fr; ...">
+                <!-- FROM panel --> ... <!-- Amount + Arrow --> ... <!-- TO panel --> ...
+            </div>
+            <div>DIGITAL SIGNATURE: ${tx.signature}</div>
+            ${doubleSpendWarning}
+        `;
     }
 
-    // 5. Decision handling — handleDecision() + showFeedback() (~70 lines)
-    function handleDecision(approved) { ... }
-    function showFeedback(isCorrect, tx, userApproved) { ... }
+    // 5. Decision handling + feedback (~70 lines)
+    function handleDecision(approved) {
+        const tx = transactions[currentTxIndex];
+        const isCorrect = (approved === tx.isValid);
+        totalAnswered++;
+        if (isCorrect) {
+            correctAnswers++;
+            if (approved) processedTxIds.add(tx.id);
+        }
+        document.getElementById('correct-count').textContent = correctAnswers;
+        document.getElementById('earned-ada').textContent = correctAnswers * rewardPerCorrect;
+        showFeedback(isCorrect, tx, approved);
+    }
 
-    // 6. Results + reward claiming — showResults() (~100 lines)
+    function showFeedback(isCorrect, tx, userApproved) {
+        feedbackOverlay.style.display = 'flex';
+        const feedbackCard = document.createElement('div');
+        feedbackCard.style.cssText = `
+            background: ${isCorrect ? 'linear-gradient(...)' : 'linear-gradient(...)'};
+            ...
+        `;
+        feedbackCard.innerHTML = `
+            <div>${isCorrect ? '✓' : '✗'}</div>
+            <h2>${isCorrect ? 'CORRECT!' : 'INCORRECT'}</h2>
+            <p>You ${userApproved ? 'approved' : 'rejected'} this transaction...</p>
+            <div>EXPLANATION: ${tx.reason}</div>
+            ${isCorrect ? `<div>+${rewardPerCorrect} ${COIN_SYMBOL} earned!</div>` : ''}
+            <button id="next-tx-btn">${currentTxIndex < transactions.length - 1 ? 'NEXT' : 'RESULTS'}</button>
+        `;
+        feedbackOverlay.innerHTML = '';
+        feedbackOverlay.appendChild(feedbackCard);
+        document.getElementById('next-tx-btn').onclick = () => {
+            feedbackOverlay.style.display = 'none';
+            currentTxIndex++;
+            if (currentTxIndex < transactions.length) {
+                document.getElementById('progress-text').innerHTML = `Transaction ${currentTxIndex + 1} of ...`;
+                displayTransaction(transactions[currentTxIndex]);
+            } else {
+                showResults();
+            }
+        };
+    }
+
+    // 6. Results + reward claiming (~100 lines)
     async function showResults() {
-        // results HTML + claim button + API calls + cleanup
-        ...
+        const totalReward = correctAnswers * rewardPerCorrect;
+        const percentage = Math.round((correctAnswers / transactions.length) * 100);
+        resultsScreen.style.display = 'flex';
+        resultsScreen.innerHTML = `
+            <div>
+                <h1>VALIDATION COMPLETE</h1>
+                <div>${percentage >= 80 ? '🏆' : percentage >= 50 ? '📋' : '📝'}</div>
+                <div>ACCURACY: ${percentage}%</div>
+                <div>REWARDS EARNED: ${totalReward} ${COIN_SYMBOL}</div>
+                <p>${percentage >= 80 ? "Excellent work!..." : ...}</p>
+                <button id="claim-reward-btn">CLAIM ${totalReward} ${COIN_SYMBOL}</button>
+            </div>
+        `;
+        document.getElementById('claim-reward-btn').onclick = async () => {
+            const btn = document.getElementById('claim-reward-btn');
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+            try {
+                await rewardMinigame(MINIGAME_NAME, totalReward);
+                if (isFirstCompletion) await completeMinigame(MINIGAME_NAME);
+                if (window.GameControl?.leaderboard) await window.GameControl.leaderboard.refresh();
+                btn.textContent = '✅ Saved!';
+                setTimeout(() => {
+                    window.laundryMinigameActive = false;
+                    window.minigameActive = false;
+                    document.body.removeChild(overlay);
+                    if (onComplete) onComplete();
+                }, 800);
+            } catch (error) {
+                btn.textContent = '⚠️ Error - Closing...';
+                setTimeout(() => {
+                    window.laundryMinigameActive = false;
+                    window.minigameActive = false;
+                    document.body.removeChild(overlay);
+                    if (onComplete) onComplete();
+                }, 1500);
+            }
+        };
     }
 }
 ```
 
-**Violations:** DOM construction + game state + rendering + decision logic + feedback UI + results/rewards all in one 538-line function.
+---
 
-### After (orchestrator + 11 extracted helpers)
+## After (orchestrator + 11 extracted helpers)
+
+### DOM Builder Helpers
+
+Each function has a single job: create and return one DOM element.
 
 ```javascript
-// DOM builders (each returns a single DOM element)
-function createGameOverlay() { ... }
-function createGameContainer() { ... }
-function createHeader() { ... }
-function createProgressBar(totalCount) { ... }
-function createWalletPanel() { ... }
-function createTransactionPanel() { ... }
-function createTipsPanel() { ... }
-function createHiddenOverlay(id, zIndex, bg) { ... }
+function createGameOverlay() {
+    const overlay = document.createElement('div');
+    overlay.id = 'minigame-overlay';
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        display: flex; justify-content: center; align-items: center;
+        z-index: 10000;
+    `;
+    return overlay;
+}
 
-// Game-logic helpers (pure data → HTML)
-function highlightWallets(fromAddr, toAddr) { ... }
-function buildDoubleSpendWarning(tx, processedTxIds) { ... }
-function buildTransactionCardHTML(tx) { ... }
-function buildFeedbackCardHTML(isCorrect, tx, userApproved, rewardPerCorrect) { ... }
-function buildResultsHTML(correctAnswers, totalCount, totalReward) { ... }
+function createGameContainer() { /* → returns the styled container div */ }
+function createHeader() { /* → returns header with title + exit button */ }
+function createProgressBar(totalCount) { /* → returns score/progress bar */ }
+function createWalletPanel() { /* → returns the left wallet-balances panel */ }
+function createTransactionPanel() { /* → returns center panel with tx card + action buttons */ }
+function createTipsPanel() { /* → returns the right tips panel */ }
+function createHiddenOverlay(id, zIndex, bg) { /* → generic hidden overlay (feedback / results) */ }
+```
 
-// Backend interaction
-async function claimRewards(totalReward, isFirstCompletion) { ... }
-function closeGame(overlay, onComplete) { ... }
+### Game-Logic Helpers
 
-// Orchestrator — wires everything together
+Each function does one thing with data — no DOM creation mixed in.
+
+```javascript
+function highlightWallets(fromAddr, toAddr) {
+    // Resets all wallet highlights, then highlights the from/to wallets
+    document.querySelectorAll('[id^="wallet-"]').forEach(el => {
+        el.style.borderLeftColor = '#0033ad';
+        el.style.background = 'rgba(50,50,80,0.3)';
+    });
+    const fromEl = document.getElementById(`wallet-${fromAddr}`);
+    const toEl = document.getElementById(`wallet-${toAddr}`);
+    if (fromEl) { fromEl.style.borderLeftColor = '#FF9800'; ... }
+    if (toEl)   { toEl.style.borderLeftColor = '#4CAF50'; ... }
+}
+
+function buildDoubleSpendWarning(tx, processedTxIds) {
+    // Returns warning HTML string if double-spend detected, else ''
+    if (tx.requiresPriorTx && processedTxIds.has(tx.requiresPriorTx)) {
+        return `<div style="...">⚠️ Note: You previously approved...</div>`;
+    }
+    return '';
+}
+
+function buildTransactionCardHTML(tx) {
+    // Returns the full HTML for the transaction card (from/to/amount/signature)
+    ...
+}
+
+function buildFeedbackCardHTML(isCorrect, tx, userApproved, rewardPerCorrect) {
+    // Returns the inner HTML for the correct/incorrect feedback card
+    ...
+}
+
+function buildResultsHTML(correctAnswers, totalCount, totalReward) {
+    // Returns the full results screen HTML (accuracy %, rewards, claim button)
+    ...
+}
+```
+
+### Backend Interaction Helpers
+
+```javascript
+async function claimRewards(totalReward, isFirstCompletion) {
+    await rewardMinigame(MINIGAME_NAME, totalReward);
+    if (isFirstCompletion) await completeMinigame(MINIGAME_NAME);
+    if (window.GameControl?.leaderboard) {
+        try { await window.GameControl.leaderboard.refresh(); } catch (e) {}
+    }
+}
+
+function closeGame(overlay, onComplete) {
+    window.laundryMinigameActive = false;
+    window.minigameActive = false;
+    document.body.removeChild(overlay);
+    if (onComplete) onComplete();
+}
+```
+
+### Orchestrator
+
+The main function is now ~50 lines — it assembles DOM from builders, wires event handlers, and delegates to helpers.
+
+```javascript
 function startValidationGame(baseurl, isFirstCompletion, onComplete) {
     const transactions = generateTransactions();
     let currentTxIndex = 0;
@@ -327,227 +374,69 @@ function startValidationGame(baseurl, isFirstCompletion, onComplete) {
     let processedTxIds = new Set();
     const rewardPerCorrect = 2;
 
+    // Assemble the DOM from builder helpers
     const overlay = createGameOverlay();
     const container = createGameContainer();
     container.appendChild(createHeader());
     container.appendChild(createProgressBar(transactions.length));
-    // ... assemble game area from helpers ...
+
+    const gameArea = document.createElement('div');
+    gameArea.style.cssText = `display: flex; gap: 20px; flex: 1; min-height: 0;`;
+    gameArea.appendChild(createWalletPanel());
+    gameArea.appendChild(createTransactionPanel());
+    gameArea.appendChild(createTipsPanel());
+    container.appendChild(gameArea);
+
+    const feedbackOverlay = createHiddenOverlay('feedback-overlay', 100, 'rgba(0,0,0,0.8)');
+    const resultsScreen   = createHiddenOverlay('results-screen',   200, 'rgba(0,10,30,0.95)');
+    container.appendChild(feedbackOverlay);
+    container.appendChild(resultsScreen);
+
+    overlay.appendChild(container);
     document.body.appendChild(overlay);
 
-    // Wire handlers → thin inner functions that call helpers
+    // Wire event handlers
+    document.getElementById('exit-btn').onclick = () => closeGame(overlay, null);
     document.getElementById('approve-btn').onclick = () => handleDecision(true);
-    ...
+    document.getElementById('reject-btn').onclick  = () => handleDecision(false);
+
+    renderTransaction(transactions[currentTxIndex]);
+
+    // ── Thin inner functions that delegate to helpers ──
+
+    function renderTransaction(tx) {
+        highlightWallets(tx.from, tx.to);
+        document.getElementById('tx-card').innerHTML =
+            buildTransactionCardHTML(tx) + buildDoubleSpendWarning(tx, processedTxIds);
+    }
+
+    function handleDecision(approved) {
+        const tx = transactions[currentTxIndex];
+        const isCorrect = (approved === tx.isValid);
+        if (isCorrect) {
+            correctAnswers++;
+            if (approved) processedTxIds.add(tx.id);
+        }
+        document.getElementById('correct-count').textContent = correctAnswers;
+        document.getElementById('earned-ada').textContent = correctAnswers * rewardPerCorrect;
+        showFeedback(isCorrect, tx, approved);
+    }
+
+    function showFeedback(isCorrect, tx, userApproved) { /* delegates to buildFeedbackCardHTML */ }
+    function advanceToNext() { /* increments index, calls renderTransaction or showResults */ }
+    async function showResults() { /* delegates to buildResultsHTML + claimRewards + closeGame */ }
 }
 ```
 
 ---
 
-## Frontend — `Npc.js` → `handleKeyDown()`
+## Summary
 
-### Before (78 lines, 3+ responsibilities)
-
-```javascript
-handleKeyDown({ key }) {
-    switch (key) {
-        case 'e':
-            try {
-                // 1. Collision detection
-                const players = GameEnv.gameObjects.filter(
-                    obj => obj.state?.collisionEvents?.includes(this.spriteData.id)
-                );
-
-                if (players.length === 0) {
-                    // 2. Proximity fallback for Cards NPC
-                    const player = GameEnv.gameObjects.find(...);
-                    if (player && this.spriteData.id === 'Cards') {
-                        const dist = Math.sqrt(...);
-                        if (dist < 200) {
-                            this.launchCryptoChecker();
-                            return;
-                        }
-                    }
-                    return;
-                }
-
-                this.closeAllDialogues();
-
-                // 3. NPC dispatch (large switch statement)
-                switch (npcId) {
-                    case 'Bookshelf':  showAshTrailMinigame(); return;
-                    case 'Computer1':  infiniteUserMinigame(); return;
-                    case 'Computer2':  cryptoMinerMinigame(); return;
-                    case 'laundry':    showLaundryMinigame(); return;
-                    case 'Cards':      this.launchCryptoChecker(); return;
-                    case 'IShowGreen': Prompt.openPromptPanel(this); return;
-                    case 'Closet':     showClosetShop(); return;
-                    default:           Prompt.openPromptPanel(this); return;
-                }
-            } catch (err) { ... }
-            break;
-    }
-}
-```
-
-**Violations:** Collision detection + proximity calculation + NPC-to-minigame dispatch all in one function with a nested switch.
-
-### After (orchestrator + 3 helpers)
-
-```javascript
-findCollidingPlayers() {
-    return GameEnv.gameObjects.filter(
-        obj => obj.state?.collisionEvents?.includes(this.spriteData.id)
-    );
-}
-
-isPlayerInProximity(maxDist = 200) {
-    const player = GameEnv.gameObjects.find(obj => obj.spriteData?.id === 'player');
-    if (!player) return false;
-    const dist = Math.sqrt(...);
-    return dist < maxDist;
-}
-
-dispatchNpcInteraction(npcId) {
-    const minigameMap = {
-        'Bookshelf':  () => showAshTrailMinigame(),
-        'Computer1':  () => infiniteUserMinigame(),
-        'Computer2':  () => cryptoMinerMinigame(),
-        'laundry':    () => showLaundryMinigame(),
-        'Cards':      () => this.launchCryptoChecker(),
-        'Closet':     () => showClosetShop(),
-    };
-    const action = minigameMap[npcId];
-    action ? action() : Prompt.openPromptPanel(this);
-}
-
-handleKeyDown({ key }) {                           // ← orchestrator
-    if (key !== 'e') return;
-    try {
-        const players = this.findCollidingPlayers();
-        if (players.length === 0) {
-            if (this.spriteData.id === 'Cards' && this.isPlayerInProximity())
-                this.launchCryptoChecker();
-            return;
-        }
-        this.closeAllDialogues();
-        this.dispatchNpcInteraction(this.spriteData.id);
-    } catch (err) { ... }
-}
-```
-
----
-
-## Frontend — `ClosetShop.js` → `renderShopItems()` + `handlePurchase()`
-
-### Before — `renderShopItems()` (86 lines)
-
-```javascript
-function renderShopItems(category = 'all') {
-    const baseurl = ...;
-    const items = Object.values(SHOP_ITEMS);
-    const filteredItems = category === 'all' ? items : items.filter(...);
-
-    for (const item of filteredItems) {
-        const price = item.price;
-        const coinInfo = getCoinInfo(price.coin);
-        const balance = currentWallet[price.coin] || 0;
-        const canAfford = balance >= price.amount;
-        // ... 60+ lines of inline HTML template with affordability logic ...
-        html += `<div class="shop-item-card" ...> ... </div>`;
-    }
-    return html;
-}
-```
-
-### After — `renderShopItems()` (orchestrator + 2 helpers)
-
-```javascript
-function filterItemsByCategory(category) {
-    const items = Object.values(SHOP_ITEMS);
-    return category === 'all' ? items : items.filter(item => item.category === category);
-}
-
-function buildItemCardHTML(item, baseurl) {
-    // All affordability checks + HTML for a single item card
-    ...
-}
-
-function renderShopItems(category = 'all') {         // ← orchestrator
-    const baseurl = ...;
-    const filteredItems = filterItemsByCategory(category);
-    if (filteredItems.length === 0) return '<div ...>No items</div>';
-    return filteredItems.map(item => buildItemCardHTML(item, baseurl)).join('');
-}
-```
-
-### Before — `handlePurchase()` (62 lines)
-
-```javascript
-async function handlePurchase(itemId) {
-    const item = SHOP_ITEMS[itemId];
-    const balance = currentWallet[item.price.coin] || 0;
-    if (balance < item.price.amount) { showMessage(...); return; }
-
-    const btn = document.querySelector(`.shop-purchase-btn[data-item-id="${itemId}"]`);
-    btn.disabled = true; btn.textContent = 'PURCHASING...'; btn.style.background = '#666';
-
-    try {
-        const result = await purchaseShopItem(itemId, item);
-        if (result.success) {
-            showMessage(item.unlockMessage, 'success');
-            const walletData = await getWallet();
-            currentWallet = walletData.raw_balances || walletData.wallet || {};
-            // ... re-render grid, refresh wallet display, refresh inventory ...
-        } else {
-            showMessage(result.error || 'Purchase failed!', 'error');
-            btn.disabled = false; btn.textContent = 'PURCHASE'; ...
-        }
-    } catch (e) {
-        showMessage('Purchase failed!', 'error');
-        btn.disabled = false; btn.textContent = 'PURCHASE'; ...
-    }
-}
-```
-
-### After — `handlePurchase()` (orchestrator + 4 helpers)
-
-```javascript
-function validatePurchase(item) { ... }
-function disablePurchaseButton(btn) { ... }
-function resetPurchaseButton(btn, coinType) { ... }
-async function refreshShopAfterPurchase() { ... }
-
-async function handlePurchase(itemId) {              // ← orchestrator
-    const item = SHOP_ITEMS[itemId];
-    if (!item) return;
-    if (!validatePurchase(item)) { showMessage(...); return; }
-    const btn = document.querySelector(...);
-    disablePurchaseButton(btn);
-    try {
-        const result = await purchaseShopItem(itemId, item);
-        if (result.success) {
-            showMessage(item.unlockMessage, 'success');
-            await refreshShopAfterPurchase();
-        } else {
-            showMessage(result.error || 'Purchase failed!', 'error');
-            resetPurchaseButton(btn, item.price.coin);
-        }
-    } catch (e) {
-        showMessage('Purchase failed!', 'error');
-        resetPurchaseButton(btn, item.price.coin);
-    }
-}
-```
-
----
-
-## Summary Table
-
-| File | Function | Before (lines) | After | Helpers Extracted |
-|------|----------|:-:|:-:|:-:|
-| `model/user.py` | `User.update()` | 80 | 8 (orchestrator) | 3 (`_apply_field_updates`, `_sync_kasm_state`, `_commit_update`) |
-| `api/user.py` | `_Security.post()` | 90 | 8 (orchestrator) | 4 (`_validate_login_request`, `_authenticate_user`, `_generate_token`, `_build_auth_response`) |
-| `api/user.py` | `_CRUD.post()` | 80 | 10 (orchestrator) | 3 (`_validate_user_input`, `_clean_request_body`, `_create_and_persist_user`) |
-| `LaundryGame.js` | `startValidationGame()` | 538 | 30 (orchestrator) | 11 (DOM builders + game-logic helpers) |
-| `Npc.js` | `handleKeyDown()` | 78 | 14 (orchestrator) | 3 (`findCollidingPlayers`, `isPlayerInProximity`, `dispatchNpcInteraction`) |
-| `ClosetShop.js` | `renderShopItems()` | 86 | 6 (orchestrator) | 2 (`filterItemsByCategory`, `buildItemCardHTML`) |
-| `ClosetShop.js` | `handlePurchase()` | 62 | 15 (orchestrator) | 4 (`validatePurchase`, `disablePurchaseButton`, `resetPurchaseButton`, `refreshShopAfterPurchase`) |
+| Metric | Before | After |
+|--------|:------:|:-----:|
+| `startValidationGame()` length | 538 lines | ~50 lines (orchestrator) |
+| Number of responsibilities | 6 | 1 (wiring) |
+| Extracted helpers | 0 | 11 |
+| DOM builders | 0 | 8 (`createGameOverlay`, `createGameContainer`, `createHeader`, `createProgressBar`, `createWalletPanel`, `createTransactionPanel`, `createTipsPanel`, `createHiddenOverlay`) |
+| Game-logic helpers | 0 | 5 (`highlightWallets`, `buildDoubleSpendWarning`, `buildTransactionCardHTML`, `buildFeedbackCardHTML`, `buildResultsHTML`) |
+| Backend helpers | 0 | 2 (`claimRewards`, `closeGame`) |
